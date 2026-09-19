@@ -224,3 +224,4 @@ td.r, th.r { text-align: right; }
    (10 x 1.05em) plus the cell padding. Without a floor here the table layout
    squeezes the column and the stars wrap early — at seven on a phone. */
 .starcol { min-width: 12em; }
+.topbar .build { color: #8FAE9C; font-size: 11px; font-variant-numeric: tabular-nums; }

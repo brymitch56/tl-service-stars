@@ -784,3 +784,61 @@ async function start() {
     } catch { /* leave the default */ }
   }
 })();
+
+// ------------------------------------------------------- service worker ---
+/**
+ * Register the worker, and — the part that matters — keep asking whether a
+ * newer one exists.
+ *
+ * A browser only checks for a new sw.js on navigation, and an installed PWA
+ * resumed from a launcher often performs no navigation at all. That is how
+ * the troop's check-in app ended up serving a stale build on a Chromebook
+ * until someone pressed Ctrl+Shift+R. So the check runs on load and again
+ * every time the app comes back to the foreground, and when a new worker
+ * takes control the page reloads itself once to land on it.
+ */
+if ('serviceWorker' in navigator) {
+  let reloading = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    // Guard the reload: controllerchange can fire more than once, and a loop
+    // here would be far worse than a stale asset.
+    if (reloading) return;
+    reloading = true;
+    location.reload();
+  });
+
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').then((reg) => {
+      const check = () => { reg.update().catch(() => {}); };
+      check();
+      // Resuming the installed app is exactly when a new version is expected.
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') check();
+      });
+      // A worker that installed while the app was open should not sit waiting
+      // for every window to close — for an installed app that may be never.
+      reg.addEventListener('updatefound', () => {
+        const sw = reg.installing;
+        if (!sw) return;
+        sw.addEventListener('statechange', () => {
+          if (sw.state === 'installed' && navigator.serviceWorker.controller) {
+            sw.postMessage({ type: 'skip-waiting' });
+          }
+        });
+      });
+    }).catch(() => { /* no worker: the app still works, just without offline */ });
+
+    // Show which build is running, so "am I on the new version?" is a
+    // question anyone can answer by looking.
+    navigator.serviceWorker.ready.then(() => {
+      if (!navigator.serviceWorker.controller) return;
+      navigator.serviceWorker.addEventListener('message', (e) => {
+        if (e.data && e.data.type === 'version') {
+          const slot = $('#build');
+          if (slot) slot.textContent = e.data.version;
+        }
+      });
+      navigator.serviceWorker.controller.postMessage({ type: 'version' });
+    }).catch(() => {});
+  });
+}

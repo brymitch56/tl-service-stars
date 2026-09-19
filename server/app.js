@@ -432,9 +432,22 @@ function createApp() {
   });
 
   // ----------------------------------------------------------------- SPA --
+  // The worker script and the shell must NEVER be served from a stale HTTP
+  // cache. A browser only learns a new version exists by re-fetching sw.js,
+  // so caching it is how an installed app gets stranded on an old build —
+  // which is exactly what happened to the check-in app on a Chromebook.
+  const noStore = (res) => res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+  app.get('/sw.js', (req, res) => {
+    noStore(res);
+    // Allow the worker to control the whole origin even though it is one file.
+    res.set('Service-Worker-Allowed', '/');
+    res.type('application/javascript').sendFile(path.join(PUBLIC_DIR, 'sw.js'));
+  });
+
   app.use(express.static(PUBLIC_DIR, { index: false, maxAge: '1h' }));
   app.get(/.*/, (req, res, next) => {
     if (req.path.startsWith('/api/')) return next();
+    noStore(res);
     return res.sendFile(path.join(PUBLIC_DIR, 'index.html'));
   });
 

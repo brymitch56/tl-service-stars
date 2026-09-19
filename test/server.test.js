@@ -212,3 +212,30 @@ test('unknown paths serve the app shell, but /api/ does not', async () => {
   assert.match(await page.text(), /<title>Service Stars<\/title>/);
   assert.equal((await fetch(`${base}/api/nope`)).status, 404);
 });
+
+test('the worker script and the shell are never served from a stale cache', async () => {
+  // A browser only discovers a new version by re-fetching sw.js. Caching it
+  // is how an installed app gets stranded on an old build.
+  const sw = await fetch(`${base}/sw.js`);
+  assert.equal(sw.status, 200);
+  assert.match(sw.headers.get('cache-control') || '', /no-cache|no-store/);
+  assert.match(sw.headers.get('content-type') || '', /javascript/);
+  assert.equal(sw.headers.get('service-worker-allowed'), '/');
+  const body = await sw.text();
+  assert.match(body, /const VERSION = 'tls-v\d+'/, 'the worker carries a bumpable version');
+  assert.match(body, /skipWaiting/, 'a new worker must not wait for every window to close');
+  assert.ok(!/\/api/.test(body.split('fetch handler')[0]) || /startsWith\('\/api'\)/.test(body),
+    'the worker must exempt /api');
+
+  const shell = await fetch(`${base}/anything`);
+  assert.match(shell.headers.get('cache-control') || '', /no-cache|no-store/);
+});
+
+test('the worker never caches authenticated API traffic', async () => {
+  const body = await (await fetch(`${base}/sw.js`)).text();
+  // The exemption must come before any caching decision.
+  const apiGuard = body.indexOf("url.pathname.startsWith('/api')");
+  const firstRespond = body.indexOf('e.respondWith');
+  assert.ok(apiGuard > 0, '/api is exempted');
+  assert.ok(apiGuard < firstRespond, '/api is exempted before anything is served from cache');
+});
