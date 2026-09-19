@@ -99,16 +99,24 @@ test('with the switch on, a star is written and proved by read-back', async () =
 test('the save echoes the whole form, so an existing instance is never cleared', async () => {
   setSetting('push_enabled', true);
   // 40 Navigator hours with one star already on record = a second star owed.
-  const portal = livePortal({ hours: '40', startingStars: [{ adId: 'adexisting1', completed: '04/17/2025' }] });
+  const portal = livePortal({ hours: '40', startingStars: [{ adId: 'adexisting01', completed: '04/17/2025' }] });
   await seedApproved(portal);
   await push.runPush({ actor: 'tester', client: fakeClient(portal.routes) });
 
   const body = portal.state.saves[0];
   assert.ok(body, 'a save should have been posted');
-  assert.equal(body.get('completed_on-adexisting1'), '04/17/2025',
+  assert.equal(body.get('completed_on-adexisting01'), '04/17/2025',
     'the instance already on the record must go back unchanged');
-  assert.equal(body.get('new-adexisting1'), 'false');
+  // The portal sends NO `new-` input for an instance that already exists
+  // (verified live, 2026-09-19), so the echo must not invent one.
+  assert.equal(body.get('new-adexisting01'), null, 'an existing instance has no new- field to echo');
   assert.equal(body.get('lock-checked'), null, 'an unchecked box must not be invented');
+  // `comment-specified` / `date-specified` are page-level "apply to all"
+  // controls, not award slots. They go back as themselves and must not grow
+  // a phantom set of slot fields.
+  assert.equal(body.get('comment-specified'), '', 'the page-level comment is echoed');
+  assert.equal(body.get('new-specified'), null, 'no phantom slot for comment-specified');
+  assert.equal(body.get('completed_on-specified'), null, 'no phantom slot for comment-specified');
   assert.equal(body.get('show-items-checked'), '1', 'a checked box must be echoed');
   assert.equal(body.get('badge-select'), 'acc66f374e08', 'the Navigator Service Star award id');
   assert.equal(body.get('trailmen-select[]'), portal.id);
@@ -154,7 +162,7 @@ test('a held row moves only when a human requeues it', async () => {
 test('the portal offering no empty slot is a hold, not a guess', async () => {
   setSetting('push_enabled', true);
   // Slots exist (one filled instance) but none are free to write into.
-  const portal = livePortal({ hours: '40', emptySlots: 0, startingStars: [{ adId: 'adfull00001', completed: '04/17/2025' }] });
+  const portal = livePortal({ hours: '40', emptySlots: 0, startingStars: [{ adId: 'adfull000001', completed: '04/17/2025' }] });
   const { proposal } = await seedApproved(portal);
   const r = await push.runPush({ actor: 'tester', client: fakeClient(portal.routes) });
   assert.equal(r.summary.held, 1);

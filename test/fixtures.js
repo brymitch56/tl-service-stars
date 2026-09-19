@@ -107,10 +107,15 @@ function standardFragment({ filled = [], empty = 2 } = {}) {
     '<input type="hidden" name="_csrf" value="test-csrf">',
     '<select name="style-select"><option value="standard" selected>Standard</option></select>',
     '<input type="checkbox" name="lock-checked" value="1">',
-    '<input type="checkbox" name="show-items-checked" value="1" checked>'];
+    '<input type="checkbox" name="show-items-checked" value="1" checked>',
+    // Page-level "apply to all" controls. These share the slot prefixes but
+    // are NOT award slots — the live form carries exactly these two.
+    '<input type="text" name="date-specified" value="">',
+    '<textarea name="comment-specified"></textarea>'];
   for (const f of filled) {
+    // An instance already on the record carries NO `new-` input (verified
+    // against the live portal, 2026-09-19) — not `new=false`.
     parts.push(
-      `<input type="hidden" name="new-${f.adId}" value="false">`,
       `<input type="text" name="completed_on-${f.adId}" value="${f.completed || ''}">`,
       `<input type="text" name="awarded_on-${f.adId}" value="${f.awarded || ''}">`,
       `<input type="text" name="purchased-${f.adId}" value="${f.purchased || '0'}">`,
@@ -119,7 +124,7 @@ function standardFragment({ filled = [], empty = 2 } = {}) {
   }
   for (let i = 0; i < empty; i++) {
     slotSeq += 1;
-    const id = `adnew${String(slotSeq).padStart(6, '0')}`;
+    const id = `adnew${String(slotSeq).padStart(7, '0')}`;
     parts.push(
       `<input type="hidden" name="new-${id}" value="true">`,
       `<input type="text" name="completed_on-${id}" value="">`,

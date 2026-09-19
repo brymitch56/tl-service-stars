@@ -141,7 +141,7 @@ test('a star recorded on the portal retires its proposal', async () => {
   assert.equal(open.length, 1);
 
   // Now the star appears on the portal.
-  people[0].awards = [NAV_STAR('adtheo00001', F.TRAILMAN_B, '02/02/2025')];
+  people[0].awards = [NAV_STAR('adtheo000001', F.TRAILMAN_B, '02/02/2025')];
   await sync.runSync({ trigger: 'test', client: fakeClient(routesFor(people)) });
   assert.equal(db.prepare('SELECT status FROM proposal WHERE id = ?').get(open[0].id).status, 'recorded');
 });

@@ -90,7 +90,7 @@ test('star instances are matched by title, because the grid carries no award id'
       F.awardRow({ adId: 'adaaaaaaaaaa', trailmanId: F.TRAILMAN_A, program: 'Navigators', title: 'Navigator Service Star', completed: '04/17/2025', awarded: '05/19/2025' }),
       F.awardRow({ adId: 'adbbbbbbbbbb', trailmanId: F.TRAILMAN_A, program: 'Navigators', title: 'Navigator Service Star', completed: '11/02/2024' }),
       F.awardRow({ adId: 'adcccccccccc', trailmanId: F.TRAILMAN_A, program: 'Adventurers', title: 'Adventurer Service Star', completed: '01/05/2026' }),
-      F.awardRow({ adId: 'adddddddddddd', trailmanId: F.TRAILMAN_A, program: 'Navigators', title: 'Aquatics (2019)', completed: '08/03/2025' }),
+      F.awardRow({ adId: 'addddddddddd', trailmanId: F.TRAILMAN_A, program: 'Navigators', title: 'Aquatics (2019)', completed: '08/03/2025' }),
     ],
   }));
   assert.equal(p.stars.Navigator, 2);

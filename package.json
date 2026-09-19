@@ -9,7 +9,7 @@
     "start": "node server/index.js",
     "migrate": "node server/scripts/migrate.js",
     "user": "node server/scripts/user.js",
-    "test": "node --test test/grid.test.js test/service.test.js test/stars.test.js test/auth.test.js test/users.test.js test/tlc.test.js test/pull.test.js test/push.test.js test/server.test.js"
+    "test": "node --test test/grid.test.js test/service.test.js test/standard.test.js test/stars.test.js test/auth.test.js test/users.test.js test/tlc.test.js test/pull.test.js test/push.test.js test/server.test.js"
   },
   "dependencies": {
     "better-sqlite3": "^12.4.1",
