@@ -111,8 +111,22 @@ td.r, th.r { text-align: right; }
 .rowlink { cursor: pointer; }
 
 /* ---------------------------------------------------------------- stars -- */
-.stars { color: var(--star); letter-spacing: 1px; white-space: nowrap; }
-.stars .empty { color: var(--line); }
+/* Stars wrap every ten and grow the row taller, rather than stretching the
+   column. Each star is a fixed 1.05em box and the container is capped at ten
+   of them, so the break lands in the same place whatever the font does with
+   the glyph — a trailman with twenty-five stars is three tidy rows, not a
+   column wider than a phone. */
+.stars {
+  display: inline-flex; flex-wrap: wrap; align-items: center;
+  max-width: 10.5em; color: var(--star); line-height: 1.15;
+}
+.star { width: 1.05em; text-align: center; }
+.star.owed { opacity: .55; }
+.stars .empty { color: var(--line); width: auto; }
+.starcount {
+  flex: 0 0 auto; margin-left: .45em; color: var(--muted);
+  font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums;
+}
 .pill {
   display: inline-block; padding: 1px 8px; border-radius: 999px;
   font-size: 12px; font-weight: 700; border: 1px solid var(--line); background: #F2F4EF; color: var(--muted);
@@ -183,3 +197,30 @@ td.r, th.r { text-align: right; }
 .modal .credential { font-size: 19px; text-align: center; padding: 14px 12px; margin: 14px 0; }
 .modal .credential:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 .modal .actions { justify-content: flex-end; }
+
+/* ------------------------------------------------------- scrollable tables */
+/* A table that does not fit must SCROLL, not be clipped. The card keeps
+   overflow:hidden so its rounded corners still clip; the scrolling happens on
+   an inner wrapper. Without this the roster simply lost its right-hand
+   columns on a phone, with no way to reach them. */
+.tablecard { padding: 0; overflow: hidden; }
+.table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+/* The roster has five columns of real content; below this width they stop
+   being readable, so it scrolls instead of crushing them. */
+.table-wrap.wide > table { min-width: 760px; }
+
+@media (max-width: 640px) {
+  /* Give the scroll a visible edge so it is discoverable on a touch screen. */
+  .table-wrap { background:
+    linear-gradient(to right, var(--card) 30%, rgba(255, 255, 255, 0)) left center / 32px 100% no-repeat,
+    linear-gradient(to left, var(--card) 30%, rgba(255, 255, 255, 0)) right center / 32px 100% no-repeat,
+    radial-gradient(farthest-side at 0 50%, rgba(23, 64, 44, .14), transparent) left center / 12px 100% no-repeat,
+    radial-gradient(farthest-side at 100% 50%, rgba(23, 64, 44, .14), transparent) right center / 12px 100% no-repeat;
+    background-attachment: local, local, scroll, scroll;
+  }
+}
+
+/* The star columns are sized to hold exactly one full row of ten glyphs
+   (10 x 1.05em) plus the cell padding. Without a floor here the table layout
+   squeezes the column and the stars wrap early — at seven on a phone. */
+.starcol { min-width: 12em; }

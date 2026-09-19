@@ -63,12 +63,25 @@ function toast(msg, bad = false) {
   toastTimer = setTimeout(() => t.remove(), bad ? 7000 : 3500);
 }
 
-/** "★★★☆" — filled for what is on record, hollow for what is proposed. */
+/**
+ * Stars for one level: solid for what is on the portal, pale for what is
+ * owed. Each star is its own fixed-width span so the row wraps every ten
+ * (see .stars in styles.css) — a trailman with twenty-five would otherwise
+ * stretch his column far past the width of a phone.
+ */
+const STARS_PER_ROW = 10;
 function starRow(onRecord, proposed) {
-  const n = el('span.stars');
-  for (let i = 0; i < onRecord; i++) n.append('★');
-  for (let i = 0; i < proposed; i++) n.append(el('span', { style: 'opacity:.55' }, '★'));
-  if (!onRecord && !proposed) n.append(el('span.empty', {}, '—'));
+  const total = onRecord + proposed;
+  const n = el('span.stars', {
+    // The glyphs get hard to count past a row or two; the number is always
+    // available to a screen reader and on hover.
+    title: total ? `${onRecord} on the portal${proposed ? `, ${proposed} owed` : ''}` : 'none yet',
+  });
+  for (let i = 0; i < onRecord; i++) n.append(el('span.star', {}, '★'));
+  for (let i = 0; i < proposed; i++) n.append(el('span.star.owed', {}, '★'));
+  if (!total) n.append(el('span.empty', {}, '—'));
+  // Past one full row the count is worth spelling out next to the glyphs.
+  if (total > STARS_PER_ROW) n.append(el('span.starcount', {}, String(total)));
   return n;
 }
 
@@ -199,7 +212,7 @@ async function viewTrailmen() {
   for (const t of data.trailmen) {
     const nav = t.levels.find((l) => l.level === 'Navigator') || {};
     const adv = t.levels.find((l) => l.level === 'Adventurer') || {};
-    const cell = (l) => el('td', {},
+    const cell = (l) => el('td.starcol', {},
       starRow(l.onRecord || 0, Math.max(0, (l.expected || 0) - (l.onRecord || 0))),
       el('div.small.muted.num', {}, `${l.hours || '0.00'} h`),
       l.conflict ? el('span.pill.conflict', {}, 'check') : null);
@@ -214,15 +227,16 @@ async function viewTrailmen() {
       el('td.r.small.muted.num', {}, t.woodlands !== '0.00' ? `${t.woodlands} h` : '—')));
   }
 
-  frag.append(el('div.card', { style: 'padding:0;overflow:hidden' },
-    el('table', {},
-      el('thead', {}, el('tr', {},
-        el('th', {}, 'Trailman'),
-        el('th', {}, 'Navigator · 15 h'),
-        el('th', {}, 'Adventurer · 20 h'),
-        el('th', {}, 'Toward next'),
-        el('th.r', { title: 'Fox, Hawk and Mountain Lion hours — never counted' }, 'Woodlands'))),
-      body)));
+  frag.append(el('div.card.tablecard', {},
+    el('div.table-wrap.wide', {},
+      el('table', {},
+        el('thead', {}, el('tr', {},
+          el('th', {}, 'Trailman'),
+          el('th.starcol', {}, 'Navigator · 15 h'),
+          el('th.starcol', {}, 'Adventurer · 20 h'),
+          el('th', {}, 'Toward next'),
+          el('th.r', { title: 'Fox, Hawk and Mountain Lion hours — never counted' }, 'Woodlands'))),
+        body))));
   frag.append(el('p.small.muted', {},
     'Filled stars are on the Trail Life Connect record; pale stars are owed and waiting in Review. '
     + 'Woodlands hours are shown for reference only — they never count toward a star and never carry forward.'));
@@ -294,15 +308,16 @@ async function viewTrailman(id) {
         : el('span.pill.conflict', {}, r.verified === false ? 'not verified' : 'unknown')),
       el('td.small.muted', {}, r.counts ? 'counts' : reasonNotCounted(r))));
   }
-  frag.append(el('div.card', { style: 'padding:0;overflow:hidden' },
+  frag.append(el('div.card.tablecard', {},
     el('div', { style: 'padding:14px 16px 0' },
       el('h3', {}, 'Service record'),
       el('p.small.muted', {}, `${rows.length} record(s), mirrored from Trail Life Connect.`)),
-    el('table', {},
-      el('thead', {}, el('tr', {},
-        el('th', {}, 'Date'), el('th', {}, 'Act of service'), el('th.r', {}, 'Hours'),
-        el('th', {}, 'Level'), el('th', {}, 'Verified'), el('th', {}, ''))),
-      body)));
+    el('div.table-wrap', {},
+      el('table', {},
+        el('thead', {}, el('tr', {},
+          el('th', {}, 'Date'), el('th', {}, 'Act of service'), el('th.r', {}, 'Hours'),
+          el('th', {}, 'Level'), el('th', {}, 'Verified'), el('th', {}, ''))),
+        body))));
   return frag;
 }
 
@@ -399,12 +414,13 @@ async function viewReview() {
         ' ',
         el('button.btn.small.ghost', { onclick: act('reject') }, 'Reject'))));
   }
-  frag.append(el('div.card', { style: 'padding:0;overflow:hidden' },
-    el('table', {},
-      el('thead', {}, el('tr', {},
-        el('th', {}, 'Trailman'), el('th', {}, 'Star'), el('th', {}, 'Earned on'),
-        el('th', {}, ''), el('th.r', {}, ''))),
-      body)));
+  frag.append(el('div.card.tablecard', {},
+    el('div.table-wrap', {},
+      el('table', {},
+        el('thead', {}, el('tr', {},
+          el('th', {}, 'Trailman'), el('th', {}, 'Star'), el('th', {}, 'Earned on'),
+          el('th', {}, ''), el('th.r', {}, ''))),
+        body))));
   frag.append(el('p.small.muted', {}, '“Earned on” is the date his hours crossed the threshold, '
     + 'taken from the service record — not the date this app noticed.'));
   return frag;
