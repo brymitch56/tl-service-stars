@@ -164,3 +164,22 @@ td.r, th.r { text-align: right; }
   .card { padding: 12px; }
   th, td { padding: 7px 6px; }
 }
+
+/* ---------------------------------------------------- one-time password -- */
+/* A dialog, not a toast: this is the only moment the password is readable,
+   so it waits for an explicit dismissal and cannot be lost to a re-render,
+   a stray Escape or a click on the backdrop. */
+.modal-root {
+  position: fixed; inset: 0; z-index: 100;
+  display: grid; place-items: center; padding: 20px;
+  background: rgba(23, 64, 44, .45);
+}
+.modal {
+  width: min(480px, 100%); background: var(--card);
+  border: 1px solid var(--line); border-radius: var(--radius);
+  box-shadow: 0 8px 32px rgba(23, 64, 44, .25); padding: 22px;
+}
+.modal h3 { margin-top: 0; }
+.modal .credential { font-size: 19px; text-align: center; padding: 14px 12px; margin: 14px 0; }
+.modal .credential:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+.modal .actions { justify-content: flex-end; }

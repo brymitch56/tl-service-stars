@@ -583,9 +583,12 @@ async function viewSettings() {
     const act = async (path, label) => {
       try {
         const r = await api(`/api/users/${u.id}/${path}`, { method: 'POST' });
+        // Refresh the list FIRST — render() clears #view, and the dialog must
+        // outlive that. It lives on <body>, but the order still matters so
+        // the page behind it is up to date while it is open.
+        await render();
         if (r.tempPassword) showTempPassword(u.email, r.tempPassword);
         else toast(label);
-        render();
       } catch (e) { toast(e.message, true); }
     };
     ubody.append(el('tr', { style: u.disabled ? 'opacity:.55' : '' },
@@ -620,8 +623,8 @@ async function viewSettings() {
       onclick: async () => {
         try {
           const r = await api('/api/users', { method: 'POST', body: { name: nn.value, email: ne.value, role: nr.value } });
+          await render();
           showTempPassword(r.user.email, r.tempPassword);
-          render();
         } catch (e) { toast(e.message, true); }
       },
     }, 'Create account')),
@@ -648,15 +651,82 @@ async function viewSettings() {
   return frag;
 }
 
+/**
+ * Show a one-time password until the admin explicitly dismisses it.
+ *
+ * This is the only moment the password exists in readable form — the server
+ * keeps a scrypt hash and nothing else, so a dismissal that happens by
+ * accident means issuing a new one. Three consequences for this dialog:
+ *
+ *   - it lives on <body>, NOT inside #view. The first version rendered into
+ *     #view and the caller then re-rendered the page, which cleared it within
+ *     milliseconds — the password flashed past and was gone.
+ *   - it is not a toast and does not time out.
+ *   - Escape and a click on the backdrop deliberately do NOT close it. For
+ *     almost any dialog that is hostile; here, the cost of a stray keypress
+ *     is a password nobody can read back.
+ */
 function showTempPassword(email, password) {
-  const box = el('div.card', {},
-    el('h3', {}, 'One-time password'),
-    el('p', {}, `For ${email}. It is shown once — read it to them now.`),
-    el('p.credential', {}, password),
-    el('p.small.muted', {}, 'They will be asked to set their own password the first time they sign in.'),
-    el('div.actions', {}, el('button.btn.ghost', { onclick: () => box.remove() }, 'Done')));
-  $('#view').prepend(box);
-  box.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  const existing = $('.modal-root');
+  if (existing) existing.remove();
+  const previousFocus = document.activeElement;
+
+  const value = el('p.credential', { tabindex: '0' }, password);
+  const copyBtn = el('button.btn', {
+    onclick: async () => {
+      try {
+        await navigator.clipboard.writeText(password);
+        copyBtn.textContent = 'Copied';
+      } catch {
+        // No clipboard permission (or an insecure origin) — select it so the
+        // admin can copy by hand rather than being told nothing happened.
+        const r = document.createRange();
+        r.selectNodeContents(value);
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(r);
+        copyBtn.textContent = 'Selected — press Ctrl+C';
+      }
+      setTimeout(() => { copyBtn.textContent = 'Copy'; }, 4000);
+    },
+  }, 'Copy');
+
+  const close = () => {
+    root.remove();
+    document.removeEventListener('keydown', onKey, true);
+    if (previousFocus && previousFocus.focus) previousFocus.focus();
+  };
+  const doneBtn = el('button.btn.ghost', { onclick: close }, 'Done — I have saved it');
+
+  const dialog = el('div.modal', {
+    role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'otp-title',
+  },
+  el('h3', { id: 'otp-title' }, 'One-time password'),
+  el('p', {}, 'For ', el('strong', {}, email), '. Read it to them now — ',
+    el('strong', {}, 'it cannot be shown again.')),
+  value,
+  el('p.small.muted', {}, 'They will be asked to replace it the first time they sign in. '
+    + 'If it is lost, issue a new one with “Reset password”.'),
+  el('div.actions', {}, copyBtn, doneBtn));
+
+  // Keep Tab inside the dialog, and swallow Escape.
+  function onKey(e) {
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); return; }
+    if (e.key !== 'Tab') return;
+    const focusable = [copyBtn, doneBtn, value];
+    const i = focusable.indexOf(document.activeElement);
+    if (i === -1) { e.preventDefault(); copyBtn.focus(); return; }
+    const next = e.shiftKey ? i - 1 : i + 1;
+    if (next < 0 || next >= focusable.length) {
+      e.preventDefault();
+      focusable[e.shiftKey ? focusable.length - 1 : 0].focus();
+    }
+  }
+  document.addEventListener('keydown', onKey, true);
+
+  const root = el('div.modal-root', {}, dialog);
+  document.body.append(root);
+  copyBtn.focus();
 }
 
 // ----------------------------------------------------------------- start ---
