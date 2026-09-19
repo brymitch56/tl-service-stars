@@ -27,8 +27,10 @@
  */
 const { db } = require('../db');
 const { toPortalDate, parseTlcDate } = require('../../lib/html');
-const { parseStandardFragment, firstEmptySlot } = require('../../lib/standard');
-const { STAR_AWARD_IDS, PROGRAM_OF, LEVEL_IDS, STAR_LEVELS } = require('../../lib/program');
+const {
+  parseStandardFragment, firstEmptySlot, buildSaveBody, savedSignature,
+} = require('../../lib/standard');
+const { STAR_AWARD_IDS, PROGRAM_OF, LEVEL_SELECT, STAR_LEVELS } = require('../../lib/program');
 const { getSetting, audit } = require('./settings');
 const sync = require('./sync');
 
@@ -115,53 +117,80 @@ async function pushOne(tlc, row, actor) {
   if (dateProblem) return failed(dateProblem);
 
   const awardId = STAR_AWARD_IDS[row.level];
+  const levelSelect = LEVEL_SELECT[row.level];
+  const formDate = toPortalDate(row.completed_on);
+  const comment = row.comment || '';
+
   const before = await tlc.fetchTrailmanService(person.tlc_user_id);
   const countBefore = before.stars[row.level] || 0;
 
-  // Fetch the Standard fragment FRESH — slot ids are per-fetch.
+  // Fetch the Standard fragment FRESH — slot ids are minted per fetch, so a
+  // cached one would either collide or write into a slot that no longer maps
+  // to anything.
   const fragment = await tlc.fetchBadgeTrackerView({
+    trailmanId: person.tlc_user_id, awardId, level: levelSelect,
+  });
+  const panelsBefore = parseStandardFragment(fragment);
+  if (panelsBefore.warnings.length) {
+    return held(`could not read the entry form: ${panelsBefore.warnings.join('; ')}`);
+  }
+  const slot = firstEmptySlot(panelsBefore);
+  if (!slot) return held('the portal offered no empty slot for another instance — add it by hand');
+
+  // The fragment is ONLY the panels: no form, no _csrf, none of the page's
+  // own controls. The save posts the whole form, so the body is the page
+  // form plus these panels — building it from the fragment alone drops nine
+  // fields the portal always sends.
+  const pageHtml = await tlc.getText('/advancement/index');
+  const body = buildSaveBody({
+    pageHtml,
+    fragmentHtml: fragment,
+    slotId: slot.adId,
     trailmanId: person.tlc_user_id,
     awardId,
-    level: LEVEL_IDS[row.level],
+    levelSelect,
+    completedOn: formDate,
+    comment,
+    purchased: slot.purchased || '0',
   });
-  const parsed = parseStandardFragment(fragment);
-  if (parsed.warnings.length) return held(`could not read the entry form: ${parsed.warnings.join('; ')}`);
-
-  const slot = firstEmptySlot(parsed);
-  if (!slot) return held('the portal offered no empty slot for another instance — add it by hand');
 
   db.prepare("UPDATE push_queue SET state = 'sent', attempts = attempts + 1, sent_at = ? WHERE id = ?")
     .run(nowIso(), row.id);
 
-  const fields = require('../../lib/standard').toFields(parsed, {
-    adId: slot.adId,
-    completedOn: toPortalDate(row.completed_on),
-    comment: row.comment || '',
-    purchased: slot.purchased || '0',
-  }, {
-    _csrf: tlc.csrf || parsed.others._csrf || '',
-    'style-select': 'standard',
-    'level-select': LEVEL_IDS[row.level],
-    'trailmen-select[]': person.tlc_user_id,
-    'badge-select': awardId,
-  });
+  await tlc.postAdvancementIndex(body);
 
-  await tlc.postAdvancementIndex(fields);
-
-  // A 200 means nothing here. Read it back.
+  // A 200 means nothing here — this platform answers 200 whether or not it
+  // wrote. Three things must all hold, or the row is held for a person:
+  //   1. the instance count for this level went up by exactly one
+  //   2. the new instance carries OUR date and comment
+  //   3. every instance that was already there is byte-identical
   const after = await tlc.fetchTrailmanService(person.tlc_user_id);
   const countAfter = after.stars[row.level] || 0;
   sync.mirrorTrailman(person.id, after);
 
-  if (countAfter !== countBefore + 1) {
-    const why = `not confirmed by read-back: ${row.level} instances went ${countBefore} -> ${countAfter}`;
+  const panelsAfter = parseStandardFragment(await tlc.fetchBadgeTrackerView({
+    trailmanId: person.tlc_user_id, awardId, level: levelSelect,
+  }));
+  const beforeAdIds = new Set(panelsBefore.slots.filter((s) => !s.isNew).map((s) => s.adId));
+  const added = panelsAfter.slots.find((s) => !s.isNew && !beforeAdIds.has(s.adId)
+    && s.completedOn === formDate && (s.comment || '') === comment);
+  const untouched = JSON.stringify(savedSignature(panelsBefore))
+    === JSON.stringify(savedSignature(panelsAfter, added ? added.adId : null));
+
+  if (countAfter !== countBefore + 1 || !added || !untouched) {
+    const why = countAfter !== countBefore + 1
+      ? `${row.level} instances went ${countBefore} -> ${countAfter} (expected +1)`
+      : (!added
+        ? 'could not find the new instance carrying our date and comment on read-back'
+        : 'an instance that was already on the record changed during the save');
     audit(actor, 'push.held', 'push_queue', row.id, null, { why });
-    return held(why);
+    return held(`not confirmed by read-back: ${why}`);
   }
 
-  // Which instance is new? The one the mirror did not have before.
+  // Which instance is new, as the awards grid sees it.
   const beforeIds = new Set(before.awards.rows.filter((a) => a.starLevel === row.level).map((a) => a.adId));
-  const fresh = after.awards.rows.find((a) => a.starLevel === row.level && !beforeIds.has(a.adId));
+  const fresh = after.awards.rows.find((a) => a.starLevel === row.level && !beforeIds.has(a.adId))
+    || { adId: added.adId };
   db.prepare("UPDATE push_queue SET state = 'confirmed', confirmed_at = ?, ad_id = ?, detail = NULL WHERE id = ?")
     .run(nowIso(), fresh ? fresh.adId : null, row.id);
   db.prepare("UPDATE proposal SET status = 'recorded', decided_at = ?, decided_by = ? WHERE id = ?")

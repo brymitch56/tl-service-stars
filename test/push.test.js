@@ -25,32 +25,43 @@ function newTrailmanId() {
  */
 function livePortal({ acceptSave = true, startingStars = [], hours = '20', emptySlots = 2 } = {}) {
   const id = newTrailmanId();
-  const state = { id, stars: [...startingStars], saves: [], savedSeq: 0 };
+  const state = { id, stars: [...startingStars], saves: [], viewParams: [], savedSeq: 0 };
   const ledgerRows = [row({ key: `${id}-s1`, date: '02/02/2025', act: 'Service day', hours, level: 'Navigator' })];
   const starRow = (s) => F.awardRow({
     adId: s.adId, trailmanId: id, program: 'Navigators', title: 'Navigator Service Star', completed: s.completed,
   });
   const routes = {
     'GET /login': F.DASHBOARD,
-    'GET /advancement/index': F.advancementIndex([{ id, name: 'Rivers, Sam' }]),
+    // The page shell serves two jobs, as it does live: the trailman picker
+    // for the roster read, and the form the save body is built from.
+    'GET /advancement/index': () => F.advancementIndex([{ id, name: 'Rivers, Sam' }]) + F.advancementPage(),
     [`GET /profile/${id}`]: () => F.profilePage(id, {
       ledger: F.ledgerGrid(ledgerRows, { totalHours: hours }),
       awards: state.stars.map(starRow),
     }),
-    'POST /advancement/badge-tracker-view': () => F.standardFragment({
-      filled: state.stars.map((s) => ({ adId: s.adId, completed: s.completed })),
-      empty: emptySlots,
-    }),
+    // Panels only — no form, no csrf — exactly as the live endpoint answers.
+    'POST /advancement/badge-tracker-view': ({ opts }) => {
+      const p = new URLSearchParams(opts.body);
+      state.viewParams.push([...p.keys()]);
+      return F.standardFragment({
+        filled: state.stars.map((s) => ({ adId: s.adId, completed: s.completed, comment: s.comment || '', purchased: '1' })),
+        empty: emptySlots,
+      });
+    },
     'POST /advancement/index': ({ opts }) => {
       const body = new URLSearchParams(opts.body);
       state.saves.push(body);
       if (acceptSave) {
         for (const [k, v] of body) {
-          const m = /^completed_on-(ad\w+)$/.exec(k);
+          const m = /^completed_on-(ad\w{10})$/.exec(k);
           if (m && v && !state.stars.some((s) => s.adId === m[1])) {
             state.savedSeq += 1;
             // A real advancement record id: "ad" + exactly 10 characters.
-            state.stars.push({ adId: `adsv${String(state.savedSeq).padStart(8, '0')}`, completed: v });
+            state.stars.push({
+              adId: `adsv${String(state.savedSeq).padStart(8, '0')}`,
+              completed: v,
+              comment: body.get(`comment-${m[1]}`) || '',
+            });
             break;
           }
         }
@@ -110,17 +121,26 @@ test('the save echoes the whole form, so an existing instance is never cleared',
   // The portal sends NO `new-` input for an instance that already exists
   // (verified live, 2026-09-19), so the echo must not invent one.
   assert.equal(body.get('new-adexisting01'), null, 'an existing instance has no new- field to echo');
-  assert.equal(body.get('lock-checked'), null, 'an unchecked box must not be invented');
+
+  // The page form's own controls must all travel — the fragment carries none
+  // of them, so a body built from the fragment alone would drop every one.
+  assert.equal(body.get('date-specified'), '09/19/2026');
+  assert.equal(body.get('lock-checked'), '1', 'a Krajee checkbox-x is a TEXT input and is always sent');
+  assert.equal(body.get('show-completed-checked'), '0');
+  assert.equal(body.get('show-items-checked'), '0');
+  assert.equal(body.get('track-attendance'), '0');
+  assert.ok(body.get('_csrf'), 'the save carries the form token');
   // `comment-specified` / `date-specified` are page-level "apply to all"
-  // controls, not award slots. They go back as themselves and must not grow
-  // a phantom set of slot fields.
+  // controls, not award slots: echoed as themselves, with no phantom slot.
   assert.equal(body.get('comment-specified'), '', 'the page-level comment is echoed');
   assert.equal(body.get('new-specified'), null, 'no phantom slot for comment-specified');
   assert.equal(body.get('completed_on-specified'), null, 'no phantom slot for comment-specified');
-  assert.equal(body.get('show-items-checked'), '1', 'a checked box must be echoed');
+
   assert.equal(body.get('badge-select'), 'acc66f374e08', 'the Navigator Service Star award id');
   assert.equal(body.get('trailmen-select[]'), portal.id);
-  assert.equal(body.get('level-select'), 'j8e296a067a3', 'the Navigator level id');
+  assert.equal(body.get('level-select'), 'navadv', 'the level RADIO value, not a level hashid');
+  assert.equal(body.getAll('level-select').length, 1, 'set once, not echoed twice');
+  assert.equal(body.get('style-select'), 'standard');
   // Exactly one empty slot was filled, and with a portal-format date.
   const filled = [...body].filter(([k, v]) => /^completed_on-/.test(k) && v);
   assert.equal(filled.length, 2, 'the existing instance plus the one new one');
@@ -202,4 +222,49 @@ test('only an approved proposal can be queued, and never twice', async () => {
   db.prepare("UPDATE proposal SET status = 'approved' WHERE id = ?").run(p.id);
   assert.equal(push.enqueue(p.id, 'tester').id, push.enqueue(p.id, 'tester').id,
     'queueing twice must not create a second write');
+});
+
+test('the fragment is requested with the AJAX view own parameter names', async () => {
+  setSetting('push_enabled', true);
+  const portal = livePortal();
+  await seedApproved(portal);
+  await push.runPush({ actor: 'tester', client: fakeClient(portal.routes) });
+  // Sending the FORM's field names here gets "This action can only be used in
+  // AJAX mode." and a 42-byte body — the view takes different names entirely.
+  assert.ok(portal.state.viewParams.length, 'the entry form was fetched');
+  for (const keys of portal.state.viewParams) {
+    assert.deepEqual(keys.sort(),
+      ['_csrf', 'badges', 'event_id', 'level', 'lockedChecked', 'style', 'track_attendance', 'trailmen[]'].sort());
+  }
+});
+
+test('a pre-existing instance changing during the save is a hold', async () => {
+  setSetting('push_enabled', true);
+  const portal = livePortal({ hours: '40', startingStars: [{ adId: 'adexisting01', completed: '04/17/2025' }] });
+  const { proposal } = await seedApproved(portal);
+  // The portal writes the new star but also quietly alters the old one.
+  const origin = portal.routes['POST /advancement/index'];
+  let saved = false;
+  portal.routes['POST /advancement/index'] = (ctx) => {
+    const out = origin(ctx);
+    if (!saved) { saved = true; portal.state.stars[0].completed = '01/01/2000'; }
+    return out;
+  };
+  const r = await push.runPush({ actor: 'tester', client: fakeClient(portal.routes) });
+  assert.equal(r.summary.confirmed, 0);
+  assert.equal(r.summary.held, 1);
+  assert.match(db.prepare('SELECT detail FROM push_queue WHERE proposal_id = ?').get(proposal.id).detail,
+    /already on the record changed/);
+});
+
+test('a session lost mid-save is an auth failure, not a silent hold', async () => {
+  setSetting('push_enabled', true);
+  const portal = livePortal();
+  const { proposal } = await seedApproved(portal);
+  portal.routes['POST /advancement/index'] = () =>
+    '<html><body><form><input type="password" name="LoginForm[password]"></form></body></html>';
+  const r = await push.runPush({ actor: 'tester', client: fakeClient(portal.routes) });
+  assert.equal(r.summary.held, 1);
+  assert.match(db.prepare('SELECT detail FROM push_queue WHERE proposal_id = ?').get(proposal.id).detail,
+    /session was lost during the save/);
 });

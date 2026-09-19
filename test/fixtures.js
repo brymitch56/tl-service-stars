@@ -103,15 +103,10 @@ function advancementIndex(trailmen) {
  */
 let slotSeq = 0;
 function standardFragment({ filled = [], empty = 2 } = {}) {
-  const parts = ['<form id="form-advancement" action="/advancement/index" method="post">',
-    '<input type="hidden" name="_csrf" value="test-csrf">',
-    '<select name="style-select"><option value="standard" selected>Standard</option></select>',
-    '<input type="checkbox" name="lock-checked" value="1">',
-    '<input type="checkbox" name="show-items-checked" value="1" checked>',
-    // Page-level "apply to all" controls. These share the slot prefixes but
-    // are NOT award slots — the live form carries exactly these two.
-    '<input type="text" name="date-specified" value="">',
-    '<textarea name="comment-specified"></textarea>'];
+  // The live fragment is ONLY the award panels: no <form>, no _csrf, none of
+  // the page's own controls (verified 2026-09-19 — the response is ~54 KB of
+  // panel markup and nothing else).
+  const parts = [];
   for (const f of filled) {
     // An instance already on the record carries NO `new-` input (verified
     // against the live portal, 2026-09-19) — not `new=false`.
@@ -133,8 +128,34 @@ function standardFragment({ filled = [], empty = 2 } = {}) {
       `<textarea name="comment-${id}"></textarea>`,
     );
   }
-  parts.push('</form>');
   return parts.join('');
+}
+
+/**
+ * The /advancement/index PAGE form, as the server sends it. This is what the
+ * save body is built from; the field names, the radios and the Krajee
+ * checkbox-x TEXT inputs are the live ones (2026-09-19).
+ */
+function advancementPage({ level = 'navadv', today = '09/19/2026' } = {}) {
+  return '<!doctype html><html><head><meta name="csrf-token" content="page-csrf"></head><body>'
+    + '<form id="form-advancement" action="/advancement/index" method="post">'
+    + '<input type="hidden" name="_csrf" value="page-csrf">'
+    + '<input type="radio" name="style-select" value="standard" checked>'
+    + '<input type="radio" name="style-select" value="grid">'
+    + '<input type="radio" name="style-select" value="summary">'
+    + '<input type="radio" name="level-select" value="wt">'
+    + `<input type="radio" name="level-select" value="navadv"${level === 'navadv' ? ' checked' : ''}>`
+    + '<select id="trailmen-select" name="trailmen-select[]" multiple></select>'
+    + '<select id="badge-select" name="badge-select"><option value="" selected></option></select>'
+    + `<input type="text" name="date-specified" value="${today}" readonly>`
+    + '<input type="text" name="lock-checked" value="1" class="cbx-loading">'
+    + '<input type="text" name="show-completed-checked" value="0" class="cbx-loading">'
+    + '<input type="text" name="show-items-checked" value="0" class="cbx-loading">'
+    + '<textarea name="comment-specified"></textarea>'
+    + '<select name="event-attendance"><option value="" selected>Search For Event</option></select>'
+    + '<input type="text" name="track-attendance" value="0" class="cbx-loading">'
+    + '<button type="submit" name="submit-progress" value="go">Submit Progress</button>'
+    + '</form></body></html>';
 }
 
 const LOGIN_PAGE = '<!doctype html><html><head><meta name="csrf-token" content="test-csrf"></head><body>'
@@ -153,5 +174,5 @@ const DASHBOARD = '<!doctype html><html><head><meta name="csrf-token" content="s
 module.exports = {
   TRAILMAN_A, TRAILMAN_B,
   ledgerRow, ledgerGrid, EMPTY_LEDGER, awardRow, awardsGrid, profilePage,
-  advancementIndex, standardFragment, LOGIN_PAGE, CODE_PAGE, DASHBOARD,
+  advancementIndex, advancementPage, standardFragment, LOGIN_PAGE, CODE_PAGE, DASHBOARD,
 };

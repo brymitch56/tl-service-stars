@@ -141,6 +141,50 @@ Navigator star"), which makes the whole cycle idempotent:
 - A trailman whose ledger could not be read in full has his open proposals
   withdrawn with the reason, rather than left to look approved-worthy.
 
+## Writing a star back: what the save actually needs
+
+Adding one instance is a full-form POST, and the two endpoints involved do
+NOT share a vocabulary. Both sets below were captured from the live page.
+
+`POST /advancement/badge-tracker-view` — read the panels:
+
+    _csrf, level, style, trailmen[], badges, lockedChecked,
+    event_id, track_attendance
+
+Send the *form's* field names here instead and the portal answers
+`This action can only be used in AJAX mode.` in a 42-byte body.
+
+`POST /advancement/index` — the save:
+
+    _csrf, style-select, level-select, trailmen-select[], badge-select,
+    date-specified, lock-checked, show-completed-checked,
+    show-items-checked, comment-specified, track-attendance,
+    event-attendance          …plus every award panel field
+
+**The fragment is panels only** — no `<form>`, no `_csrf`, none of the page's
+own controls (~54 KB of panel markup and nothing else). So the body is the
+page form *plus* the fragment's panels: build it from the fragment alone and
+nine fields the portal always sends go missing, and a field left out of this
+form is a field cleared.
+
+Three more things the markup will mislead you about:
+
+- `level-select` and `style-select` are **radios**, and their values are short
+  codes — `wt` | `navadv`, and `standard` | `grid` | `summary`. They are not
+  the level hashids used everywhere else on the site.
+- `lock-checked`, `show-completed-checked`, `show-items-checked` and
+  `track-attendance` look like checkboxes but are Krajee checkbox-x **text**
+  inputs carrying `"0"`/`"1"`, so they are always submitted. So is
+  `purchased-<adId>`, and so are the readonly datepicker inputs.
+- An instance already on the record has **no `new-` input at all**. Only an
+  empty slot carries one, set to `"true"`.
+
+Proof of a save is a read-back, never the response: the instance count for
+that level must rise by exactly one, the new instance must carry our date and
+comment, and every instance that was already there must be byte-identical.
+Anything else holds the row for a person — a blind retry is how a duplicate
+star gets created.
+
 ## Program ids
 
 These describe the Trail Life program rather than any person, so they live in
