@@ -1,0 +1,33 @@
+# /etc/systemd/system/tl-service-stars.service
+#
+#   sudo cp deploy/tl-service-stars.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now tl-service-stars
+#
+# Runs as the user that owns the checkout (pi on this troop's box), so on-Pi
+# `node` one-liners leave no ownership mess. The app binds 127.0.0.1 only; a
+# Cloudflare Tunnel terminates TLS in front of it.
+[Unit]
+Description=Trail Life Service Stars
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/tl-service-stars
+ExecStart=/usr/bin/node server/index.js
+Restart=on-failure
+RestartSec=5
+# The app writes only inside data/; .env must stay writable because the
+# credential key is appended to it on first use (see credcrypto.js).
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=false
+ProtectSystem=full
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=tl-service-stars
+
+[Install]
+WantedBy=multi-user.target

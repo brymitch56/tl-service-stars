@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Service Stars</title>
+<meta name="color-scheme" content="light">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icon-192.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="stylesheet" href="/styles.css?v=1">
+</head>
+<body>
+
+<!-- Sign in ---------------------------------------------------------- -->
+<div id="login-screen" class="login-wrap" hidden>
+  <form class="login" id="login-form" autocomplete="on">
+    <div class="mark"><img src="/icon.svg" alt=""></div>
+    <h1>Service Stars</h1>
+    <p class="sub" id="login-troop">Trail Life Troop</p>
+
+    <div id="login-fields">
+      <label for="email">E-mail</label>
+      <input id="email" name="username" type="email" autocomplete="username" required autofocus>
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" required>
+      <button class="btn" type="submit">Sign in</button>
+    </div>
+
+    <div id="change-fields" hidden>
+      <p class="note">Set your own password to finish signing in.</p>
+      <label for="new-password">New password</label>
+      <input id="new-password" type="password" autocomplete="new-password" minlength="12">
+      <label for="new-password2">Repeat it</label>
+      <input id="new-password2" type="password" autocomplete="new-password" minlength="12">
+      <p class="small muted">At least 12 characters. A short phrase you will remember beats a mangled word.</p>
+      <button class="btn" type="button" id="change-submit">Save and continue</button>
+    </div>
+
+    <p class="error" id="login-error" role="alert"></p>
+  </form>
+</div>
+
+<!-- App -------------------------------------------------------------- -->
+<div id="app" hidden>
+  <header class="topbar">
+    <span class="mark"><img src="/icon.svg" alt="">Service Stars</span>
+    <span class="troop" id="troop-name"></span>
+    <span class="spacer"></span>
+    <span class="who" id="who"></span>
+    <button class="btn ghost small" id="signout" style="background:#ffffff1a;color:#fff;border-color:#ffffff40">Sign out</button>
+  </header>
+  <nav class="tabs" id="tabs">
+    <button data-tab="trailmen" aria-current="page">Trailmen</button>
+    <button data-tab="review">Review <span class="badge" id="review-count" hidden>0</span></button>
+    <button data-tab="runs">Sync log</button>
+    <button data-tab="settings" data-admin hidden>Settings</button>
+  </nav>
+  <main id="view"><p class="spin">Loading…</p></main>
+</div>
+
+<script src="/app.js?v=1"></script>
+</body>
+</html>

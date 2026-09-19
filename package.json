@@ -1,0 +1,18 @@
+{
+  "name": "tl-service-stars",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Leaders-only Service Star tracker for a Trail Life USA troop — reads Trail Life Connect service hours, proposes earned Navigator/Adventurer Service Stars, and (behind a flag) records them back on TLC.",
+  "license": "MIT",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "start": "node server/index.js",
+    "migrate": "node server/scripts/migrate.js",
+    "user": "node server/scripts/user.js",
+    "test": "node --test test/grid.test.js test/service.test.js test/stars.test.js test/auth.test.js test/users.test.js test/tlc.test.js test/pull.test.js test/push.test.js test/server.test.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.4.1",
+    "express": "^5.2.1"
+  }
+}

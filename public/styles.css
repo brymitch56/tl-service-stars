@@ -1,0 +1,166 @@
+/* Service Stars — a leaders' review tool.
+   Same palette as the troop's check-in app (pine green, canvas paper, blaze
+   orange strictly as "needs attention"), but laid out for a laptop and a
+   table of numbers rather than a kiosk: denser rows, smaller targets, and
+   type that stays readable at a glance down a column of hours. */
+:root {
+  --pine: #17402C;
+  --pine-2: #235B3F;
+  --paper: #F4F3EC;
+  --card: #FFFFFF;
+  --ink: #1C241E;
+  --muted: #5C6A60;
+  --line: #D7D9CE;
+  --blaze: #DF5A12;          /* attention / conflict only */
+  --in: #2E7D4F;             /* earned / confirmed */
+  --focus: #123322;
+  --star: #B8860B;           /* the star itself */
+  --radius: 12px;
+  --shadow: 0 1px 2px rgba(23, 64, 44, .06), 0 2px 8px rgba(23, 64, 44, .05);
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; padding: 0; }
+body {
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 15px;
+  line-height: 1.45;
+}
+h1, h2, h3 { margin: 0 0 .4em; line-height: 1.25; }
+h2 { font-size: 20px; }
+h3 { font-size: 16px; }
+a { color: var(--pine-2); }
+.num { font-variant-numeric: tabular-nums; }
+.muted { color: var(--muted); }
+.small { font-size: 13px; }
+
+/* ---------------------------------------------------------------- shell -- */
+.topbar {
+  background: var(--pine); color: #fff;
+  display: flex; align-items: center; gap: 14px;
+  padding: 10px 18px; flex-wrap: wrap;
+}
+.topbar .mark { display: flex; align-items: center; gap: 10px; font-weight: 700; letter-spacing: .01em; }
+.topbar .mark img { width: 28px; height: 28px; display: block; }
+.topbar .troop { color: #BFD3C6; font-weight: 500; font-size: 13px; }
+.topbar .spacer { flex: 1; }
+.topbar .who { color: #DCE7E0; font-size: 13px; }
+.tabs { display: flex; gap: 2px; padding: 0 12px; background: var(--pine); flex-wrap: wrap; }
+.tabs button {
+  background: transparent; border: none; color: #CFE0D6; cursor: pointer;
+  font: inherit; font-weight: 600; font-size: 14px;
+  padding: 9px 14px; border-radius: 8px 8px 0 0;
+}
+.tabs button:hover { background: rgba(255, 255, 255, .08); color: #fff; }
+.tabs button[aria-current="page"] { background: var(--paper); color: var(--pine); }
+.tabs .badge {
+  display: inline-block; margin-left: 6px; min-width: 18px; padding: 0 5px;
+  background: var(--blaze); color: #fff; border-radius: 9px;
+  font-size: 11px; font-weight: 800; text-align: center;
+}
+main { max-width: 1120px; margin: 0 auto; padding: 18px 16px 64px; }
+.page-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+.page-head .spacer { flex: 1; }
+
+/* ---------------------------------------------------------------- cards -- */
+.card {
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: var(--radius); box-shadow: var(--shadow);
+  padding: 16px; margin-bottom: 16px;
+}
+.card > h2:first-child, .card > h3:first-child { margin-top: 0; }
+.card.warn { border-left: 4px solid var(--blaze); }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+
+/* -------------------------------------------------------------- controls -- */
+.btn {
+  border: 1px solid transparent; border-radius: 9px; cursor: pointer;
+  font: inherit; font-weight: 650; padding: 7px 13px; min-height: 36px;
+  background: var(--pine); color: #fff;
+}
+.btn:hover:not(:disabled) { background: var(--pine-2); }
+.btn:disabled { opacity: .5; cursor: default; }
+.btn.ghost { background: transparent; color: var(--pine); border-color: var(--line); }
+.btn.ghost:hover:not(:disabled) { background: #EFF2EC; }
+.btn.danger { background: #A1290F; }
+.btn.danger:hover:not(:disabled) { background: #8A2209; }
+.btn.small { min-height: 30px; padding: 4px 10px; font-size: 13px; }
+.btn:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, .tabs button:focus-visible {
+  outline: 3px solid var(--focus); outline-offset: 2px;
+}
+.tabs button:focus-visible { outline-color: #9CC6AE; }
+input[type="text"], input[type="email"], input[type="password"], input[type="date"], select, textarea {
+  font: inherit; padding: 8px 10px; border: 1px solid var(--line);
+  border-radius: 9px; background: var(--card); color: var(--ink); width: 100%;
+}
+label { display: block; font-weight: 600; font-size: 13px; margin: 10px 0 2px; }
+label.inline { display: flex; align-items: center; gap: 8px; font-weight: 500; font-size: 14px; }
+label.inline input { width: auto; }
+.actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.error { color: #A1290F; font-weight: 600; margin: 8px 0 0; }
+.ok { color: var(--in); font-weight: 600; margin: 8px 0 0; }
+
+/* --------------------------------------------------------------- tables -- */
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); font-weight: 700; }
+tbody tr:hover { background: #FAFBF8; }
+td.r, th.r { text-align: right; }
+.rowlink { cursor: pointer; }
+
+/* ---------------------------------------------------------------- stars -- */
+.stars { color: var(--star); letter-spacing: 1px; white-space: nowrap; }
+.stars .empty { color: var(--line); }
+.pill {
+  display: inline-block; padding: 1px 8px; border-radius: 999px;
+  font-size: 12px; font-weight: 700; border: 1px solid var(--line); background: #F2F4EF; color: var(--muted);
+}
+.pill.new { background: #FBEEE4; border-color: #F0C9A8; color: #8A3708; }
+.pill.conflict { background: #FDE9E4; border-color: #F2B7A6; color: #8A2209; }
+.pill.ok { background: #E7F3EB; border-color: #B7D9C4; color: #1E5B38; }
+.pill.level { background: #E9EEE9; color: var(--pine); border-color: #CBD8CD; }
+
+/* A hours-to-next-star meter. Width is set inline from the percentage. */
+.meter { background: #E8EBE5; border-radius: 999px; height: 7px; overflow: hidden; min-width: 90px; }
+.meter > span { display: block; height: 100%; background: var(--pine-2); border-radius: 999px; }
+
+/* ---------------------------------------------------------------- login -- */
+.login-wrap { min-height: 100vh; display: grid; place-items: center; padding: 24px; }
+.login {
+  width: min(400px, 100%); background: var(--card); border: 1px solid var(--line);
+  border-radius: var(--radius); box-shadow: var(--shadow); padding: 26px;
+}
+.login .mark { text-align: center; margin-bottom: 14px; }
+.login .mark img { width: 56px; height: 56px; }
+.login h1 { font-size: 21px; text-align: center; margin-bottom: 2px; }
+.login .sub { text-align: center; color: var(--muted); font-size: 13px; margin-bottom: 18px; }
+.login .btn { width: 100%; margin-top: 16px; min-height: 42px; }
+
+/* --------------------------------------------------------------- detail -- */
+.levelcard { border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; background: #FCFDFB; }
+.levelcard h3 { display: flex; align-items: center; gap: 8px; }
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 3px 14px; font-size: 14px; margin: 8px 0; }
+.kv dt { color: var(--muted); }
+.kv dd { margin: 0; font-variant-numeric: tabular-nums; }
+.note { background: #F6F8F4; border-left: 3px solid var(--line); padding: 8px 12px; margin: 10px 0; font-size: 13.5px; }
+.note.warn { background: #FDF3EC; border-left-color: var(--blaze); }
+.credential {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  background: #F2F4EF; border: 1px dashed var(--line); border-radius: 8px;
+  padding: 10px 12px; font-size: 16px; word-break: break-all; user-select: all;
+}
+.toast {
+  position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%);
+  background: var(--pine); color: #fff; padding: 10px 18px; border-radius: 999px;
+  box-shadow: var(--shadow); font-weight: 600; z-index: 50; max-width: 90vw;
+}
+.toast.bad { background: #A1290F; }
+.spin { color: var(--muted); font-style: italic; }
+
+@media (max-width: 640px) {
+  main { padding: 14px 10px 48px; }
+  .card { padding: 12px; }
+  th, td { padding: 7px 6px; }
+}
