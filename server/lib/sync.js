@@ -41,7 +41,8 @@ function makeTlc(overrides = {}) {
     TLC_PASSWORD: (saved && saved.password) || env.TLC_PASSWORD,
     ...overrides,
   });
-  return tlcLib.makeClient(cfg, { store: portal });
+  // Diagnostics go to the journal; the client never logs a value.
+  return tlcLib.makeClient(cfg, { store: portal, log: (m) => console.log(m) });
 }
 
 // --------------------------------------------------------------- mirror ----

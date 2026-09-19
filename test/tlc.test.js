@@ -186,3 +186,62 @@ test('fetchTrailmanService refuses anything that is not a trailman hashid', asyn
   await assert.rejects(() => c.fetchTrailmanService('../../etc/passwd'), /trailman hashid/);
   await assert.rejects(() => c.fetchTrailmanService('j8e296a067a3'), /trailman hashid/);
 });
+
+test('a code prompt behind a redirect to an unlisted path still parks', async () => {
+  // What the live portal actually does: the password is accepted, a text is
+  // sent, and it 302s to a verification page. That path is not — and cannot
+  // be — on the READ allow-list, so holding sign-in hops to that list turned
+  // "enter the code we just texted you" into an opaque failure.
+  const parked = [];
+  const store = {
+    loadCookies: () => null, saveCookies: () => {}, touch: () => {},
+    putChallenge: (c) => { parked.push(c); return { id: 'x1' }; }, clearChallenge: () => {},
+  };
+  const fetchImpl = fakeFetch({
+    'GET /login': { body: F.LOGIN_PAGE, headers: { 'set-cookie': '_csrf=abc; Path=/' } },
+    'POST /login': {
+      status: 302, body: '',
+      headers: { location: '/user/two-factor-verify', 'set-cookie': 'PHPSESSID=half; Path=/' },
+    },
+    'GET /user/two-factor-verify': F.CODE_PAGE,
+  });
+  const c = makeClient(cfg(), { fetchImpl, store });
+  const err = await c.login().then(() => null, (e) => e);
+  assert.ok(err, 'login must not resolve');
+  assert.equal(err.code, EXIT.CODE_REQUIRED, `expected a parked code prompt, got: ${err.message}`);
+  assert.equal(parked.length, 1);
+  assert.equal(parked[0].challenge.field, 'VerifyForm[code]');
+});
+
+test('sign-in still refuses a hop to a data-changing endpoint', async () => {
+  const fetchImpl = fakeFetch({
+    'GET /login': { body: F.LOGIN_PAGE, headers: { 'set-cookie': '_csrf=abc; Path=/' } },
+    'POST /login': { status: 302, body: '', headers: { location: '/advancement/delete?id=x' } },
+  });
+  const c = makeClient(cfg(), { fetchImpl });
+  await assert.rejects(() => c.login({ useStored: false, park: false }), /changes data/);
+});
+
+test('sign-in cookies never follow a redirect off the portal', async () => {
+  const fetchImpl = fakeFetch({
+    'GET /login': { body: F.LOGIN_PAGE, headers: { 'set-cookie': '_csrf=abc; Path=/' } },
+    'POST /login': { status: 302, body: '', headers: { location: 'https://evil.example.com/collect' } },
+  });
+  const c = makeClient(cfg(), { fetchImpl });
+  await assert.rejects(() => c.login({ useStored: false, park: false }), /refusing to send portal cookies/);
+});
+
+test('an unrecognised page after the password is reported, with field names only', async () => {
+  const seen = [];
+  const fetchImpl = fakeFetch({
+    'GET /login': { body: F.LOGIN_PAGE, headers: { 'set-cookie': '_csrf=abc; Path=/' } },
+    // No password field, no code-shaped field: something we do not know.
+    'POST /login': '<html><body><form action="/odd"><input name="SomethingNew[answer]" type="text">'
+      + '<input name="secret" type="hidden" value="do-not-log-me"></form></body></html>',
+  });
+  const c = makeClient(cfg(), { fetchImpl, log: (m) => seen.push(m) });
+  await assert.rejects(() => c.login({ useStored: false, park: false }), /does not recognise/);
+  const line = seen.join('\n');
+  assert.match(line, /SomethingNew\[answer\]:text/, 'the log names the fields it saw');
+  assert.ok(!/do-not-log-me/.test(line), 'a value must never reach the log');
+});
