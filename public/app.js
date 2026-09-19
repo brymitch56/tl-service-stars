@@ -797,12 +797,42 @@ async function start() {
  * every time the app comes back to the foreground, and when a new worker
  * takes control the page reloads itself once to land on it.
  */
+/**
+ * Is it safe to reload out from under whoever is using the app?
+ *
+ * A new version can activate at any moment, including while a one-time
+ * password is on screen — and that password exists nowhere else, so
+ * reloading would destroy it. The same goes for a half-typed form. When
+ * anything is at stake the reload waits behind a button instead.
+ */
+function safeToReload() {
+  if (document.querySelector('.modal-root')) return false;          // e.g. a one-time password
+  for (const f of document.querySelectorAll('input, textarea')) {
+    if (f.type !== 'checkbox' && f.type !== 'radio' && String(f.value || '').trim()) return false;
+  }
+  return true;
+}
+
+/** Offer the update rather than forcing it. */
+function offerReload() {
+  if ($('#update-now')) return;
+  const slot = $('#build');
+  if (!slot) return;
+  slot.textContent = 'update ready';
+  slot.append(' ', el('button.btn.small', {
+    id: 'update-now',
+    style: 'margin-left:6px;background:#ffffff26;color:#fff;border-color:#ffffff40;min-height:22px;padding:1px 8px;font-size:11px',
+    onclick: () => location.reload(),
+  }, 'Reload'));
+}
+
 if ('serviceWorker' in navigator) {
   let reloading = false;
   navigator.serviceWorker.addEventListener('controllerchange', () => {
     // Guard the reload: controllerchange can fire more than once, and a loop
     // here would be far worse than a stale asset.
     if (reloading) return;
+    if (!safeToReload()) { offerReload(); return; }
     reloading = true;
     location.reload();
   });

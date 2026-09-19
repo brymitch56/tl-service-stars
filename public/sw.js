@@ -25,7 +25,7 @@
  * after a sign-out, and stale star counts are exactly what this app exists
  * to get right.
  */
-const VERSION = 'tls-v1';
+const VERSION = 'tls-v2'; // v2: hold the reload when a password dialog or a typed form is open
 
 /** The minimum needed to render the app offline. Versioned assets are added at runtime. */
 const SHELL = ['/', '/index.html', '/icon.svg', '/manifest.webmanifest'];
