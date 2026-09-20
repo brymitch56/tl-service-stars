@@ -239,3 +239,62 @@ test('the worker never caches authenticated API traffic', async () => {
   assert.ok(apiGuard > 0, '/api is exempted');
   assert.ok(apiGuard < firstRespond, '/api is exempted before anything is served from cache');
 });
+
+// ------------------------------------------------- self-serve password ----
+test('a leader can change their own password, and it ends other sessions', async () => {
+  const { tempPassword } = await users.createUser(
+    { name: 'Pat Warden', email: 'pat@example.com' }, 'ada@example.com',
+  );
+  // Sign in twice — two devices.
+  const one = { ...jar }; // placeholder so the helper's shape is obvious
+  jar.devA = ''; jar.devB = '';
+  await call('/api/signin', { method: 'POST', body: { email: 'pat@example.com', password: tempPassword }, who: 'devA' });
+  await call('/api/password', {
+    method: 'POST', who: 'devA', body: { currentPassword: tempPassword, newPassword: 'fake-never-real-phrase-1a' },
+  });
+  await call('/api/signin', { method: 'POST', body: { email: 'pat@example.com', password: 'fake-never-real-phrase-1a' }, who: 'devB' });
+  assert.equal((await call('/api/me', { who: 'devA' })).status, 200, 'device A is still signed in');
+  assert.equal((await call('/api/me', { who: 'devB' })).status, 200, 'device B is signed in too');
+
+  // Change it from device B: A must be booted, B must survive.
+  const r = await call('/api/password', {
+    method: 'POST', who: 'devB',
+    body: { currentPassword: 'fake-never-real-phrase-1a', newPassword: 'fake-never-real-phrase-2b' },
+  });
+  assert.equal(r.status, 200);
+  assert.equal(r.data.otherSessionsEnded, 1, 'the other device was signed out');
+  assert.equal((await call('/api/me', { who: 'devA' })).status, 401, 'device A is signed out');
+  assert.equal((await call('/api/me', { who: 'devB' })).status, 200,
+    'the device that made the change keeps working, on a fresh session');
+
+  // The old password is dead, the new one works.
+  jar.devC = '';
+  assert.equal((await call('/api/signin', {
+    method: 'POST', who: 'devC', body: { email: 'pat@example.com', password: 'fake-never-real-phrase-1a' },
+  })).status, 401);
+  assert.equal((await call('/api/signin', {
+    method: 'POST', who: 'devC', body: { email: 'pat@example.com', password: 'fake-never-real-phrase-2b' },
+  })).status, 200);
+  assert.ok(one);
+});
+
+test('changing a password still needs the current one', async () => {
+  const bad = await call('/api/password', {
+    method: 'POST', who: 'admin',
+    body: { currentPassword: 'not-my-password', newPassword: 'fake-never-real-phrase-3c' },
+  });
+  assert.equal(bad.status, 401);
+  assert.match(bad.data.error, /current password/);
+  // and the admin's own session is untouched by the failed attempt
+  assert.equal((await call('/api/me', { who: 'admin' })).status, 200);
+});
+
+test('the change-password route is reachable, and audited', async () => {
+  const before = db.prepare("SELECT COUNT(*) n FROM audit_log WHERE action = 'user.password_changed'").get().n;
+  await call('/api/password', {
+    method: 'POST', who: 'admin',
+    body: { currentPassword: 'fake-never-real-phrase-9z', newPassword: 'fake-never-real-phrase-4d' },
+  });
+  assert.equal(db.prepare("SELECT COUNT(*) n FROM audit_log WHERE action = 'user.password_changed'").get().n,
+    before + 1, 'a password change leaves a trail');
+});

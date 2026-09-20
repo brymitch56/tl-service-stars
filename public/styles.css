@@ -225,3 +225,10 @@ td.r, th.r { text-align: right; }
    squeezes the column and the stars wrap early — at seven on a phone. */
 .starcol { min-width: 12em; }
 .topbar .build { color: #8FAE9C; font-size: 11px; font-variant-numeric: tabular-nums; }
+/* The signed-in name doubles as the way into your own account. */
+.topbar .who {
+  background: transparent; border: 1px solid transparent; color: #DCE7E0;
+  font: inherit; font-size: 13px; padding: 4px 8px; border-radius: 8px; cursor: pointer;
+}
+.topbar .who:hover { background: #ffffff1a; color: #fff; }
+.topbar .who:focus-visible { outline: 3px solid #9CC6AE; outline-offset: 2px; }

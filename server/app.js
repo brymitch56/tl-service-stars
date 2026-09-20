@@ -137,8 +137,17 @@ function createApp() {
     const { currentPassword, newPassword } = req.body || {};
     try {
       await auth.changeOwnPassword(req.user.id, currentPassword, newPassword);
-      audit(actorOf(req), 'user.password_changed', 'app_user', req.user.id);
-      res.json({ ok: true });
+      // A password change should end every session the old password could
+      // have started — a borrowed laptop, a phone left signed in, someone who
+      // watched it being typed. All of them go, including this one, and the
+      // browser doing the changing is handed a fresh session so the person
+      // who just proved they know the password is not signed out of their own
+      // device for their trouble.
+      const ended = Math.max(0, auth.destroyUserSessions(req.user.id) - 1);
+      const session = auth.createSession(req.user.id, req.get('User-Agent'));
+      res.cookie(auth.COOKIE, session.id, auth.cookieOpts());
+      audit(actorOf(req), 'user.password_changed', 'app_user', req.user.id, null, { otherSessionsEnded: ended });
+      res.json({ ok: true, otherSessionsEnded: ended });
     } catch (e) {
       res.status(e.status || 400).json({ error: e.message });
     }

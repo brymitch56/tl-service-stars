@@ -136,6 +136,8 @@ $('#change-submit').addEventListener('click', async () => {
   }
 });
 
+$('#who').addEventListener('click', () => { if (state.user) showAccountDialog(); });
+
 $('#signout').addEventListener('click', async () => {
   await api('/api/signout', { method: 'POST' }).catch(() => {});
   location.reload();
@@ -671,25 +673,71 @@ async function viewSettings() {
 }
 
 /**
- * Show a one-time password until the admin explicitly dismisses it.
+ * A modal dialog on <body>, outside #view.
  *
- * This is the only moment the password exists in readable form — the server
- * keeps a scrypt hash and nothing else, so a dismissal that happens by
- * accident means issuing a new one. Three consequences for this dialog:
+ * Why not inside #view: the first version of the one-time-password box
+ * rendered there, and the caller re-rendered the page straight afterwards,
+ * which cleared it within milliseconds. Anything that must outlive a render
+ * belongs here.
  *
- *   - it lives on <body>, NOT inside #view. The first version rendered into
- *     #view and the caller then re-rendered the page, which cleared it within
- *     milliseconds — the password flashed past and was gone.
- *   - it is not a toast and does not time out.
- *   - Escape and a click on the backdrop deliberately do NOT close it. For
- *     almost any dialog that is hostile; here, the cost of a stray keypress
- *     is a password nobody can read back.
+ * `dismissible: false` withholds Escape and the backdrop click. That is
+ * hostile for an ordinary dialog and exactly right for one showing a
+ * credential that exists nowhere else.
  */
-function showTempPassword(email, password) {
+function openDialog({ title, dismissible = true, onClose = null }) {
   const existing = $('.modal-root');
   if (existing) existing.remove();
   const previousFocus = document.activeElement;
 
+  const body = el('div');
+  const actions = el('div.actions');
+  const dialog = el('div.modal', {
+    role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'dlg-title',
+  }, el('h3', { id: 'dlg-title' }, title), body, actions);
+  const root = el('div.modal-root', {}, dialog);
+
+  const close = () => {
+    root.remove();
+    document.removeEventListener('keydown', onKey, true);
+    if (previousFocus && previousFocus.focus) previousFocus.focus();
+    if (onClose) onClose();
+  };
+
+  const focusable = () => [...dialog.querySelectorAll('input, button, textarea, select, [tabindex]')]
+    .filter((n) => !n.disabled && n.tabIndex !== -1);
+
+  function onKey(e) {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      if (dismissible) close();
+      return;
+    }
+    if (e.key !== 'Tab') return;
+    const f = focusable();
+    if (!f.length) return;
+    const i = f.indexOf(document.activeElement);
+    if (i === -1) { e.preventDefault(); f[0].focus(); return; }
+    const next = e.shiftKey ? i - 1 : i + 1;
+    if (next < 0 || next >= f.length) { e.preventDefault(); f[e.shiftKey ? f.length - 1 : 0].focus(); }
+  }
+  document.addEventListener('keydown', onKey, true);
+  if (dismissible) root.addEventListener('click', (e) => { if (e.target === root) close(); });
+
+  document.body.append(root);
+  return { root, dialog, body, actions, close };
+}
+
+/**
+ * Show a one-time password until the admin explicitly dismisses it.
+ *
+ * This is the only moment the password exists in readable form — the server
+ * keeps a scrypt hash and nothing else, so a dismissal that happens by
+ * accident means issuing a new one. Hence: no timeout, no Escape, no
+ * backdrop click. Only the button.
+ */
+function showTempPassword(email, password) {
+  const d = openDialog({ title: 'One-time password', dismissible: false });
   const value = el('p.credential', { tabindex: '0' }, password);
   const copyBtn = el('button.btn', {
     onclick: async () => {
@@ -710,42 +758,64 @@ function showTempPassword(email, password) {
     },
   }, 'Copy');
 
-  const close = () => {
-    root.remove();
-    document.removeEventListener('keydown', onKey, true);
-    if (previousFocus && previousFocus.focus) previousFocus.focus();
-  };
-  const doneBtn = el('button.btn.ghost', { onclick: close }, 'Done — I have saved it');
-
-  const dialog = el('div.modal', {
-    role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'otp-title',
-  },
-  el('h3', { id: 'otp-title' }, 'One-time password'),
-  el('p', {}, 'For ', el('strong', {}, email), '. Read it to them now — ',
-    el('strong', {}, 'it cannot be shown again.')),
-  value,
-  el('p.small.muted', {}, 'They will be asked to replace it the first time they sign in. '
-    + 'If it is lost, issue a new one with “Reset password”.'),
-  el('div.actions', {}, copyBtn, doneBtn));
-
-  // Keep Tab inside the dialog, and swallow Escape.
-  function onKey(e) {
-    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); return; }
-    if (e.key !== 'Tab') return;
-    const focusable = [copyBtn, doneBtn, value];
-    const i = focusable.indexOf(document.activeElement);
-    if (i === -1) { e.preventDefault(); copyBtn.focus(); return; }
-    const next = e.shiftKey ? i - 1 : i + 1;
-    if (next < 0 || next >= focusable.length) {
-      e.preventDefault();
-      focusable[e.shiftKey ? focusable.length - 1 : 0].focus();
-    }
-  }
-  document.addEventListener('keydown', onKey, true);
-
-  const root = el('div.modal-root', {}, dialog);
-  document.body.append(root);
+  d.body.append(
+    el('p', {}, 'For ', el('strong', {}, email), '. Read it to them now — ',
+      el('strong', {}, 'it cannot be shown again.')),
+    value,
+    el('p.small.muted', {}, 'They will be asked to replace it the first time they sign in. '
+      + 'If it is lost, issue a new one with "Reset password".'),
+  );
+  d.actions.append(copyBtn, el('button.btn.ghost', { onclick: d.close }, 'Done — I have saved it'));
   copyBtn.focus();
+}
+
+/**
+ * Your own account: change your own password, without needing an admin.
+ *
+ * An admin can already reset anyone's password, but that means telling
+ * somebody else you want a new one and having them read it back to you. This
+ * is the ordinary path — you know your current password and want a different
+ * one — and it deliberately ends every other session, because the usual
+ * reason for changing a password is that someone else might know it.
+ */
+function showAccountDialog() {
+  const d = openDialog({ title: 'Your account' });
+  const cur = el('input', { type: 'password', autocomplete: 'current-password' });
+  const a = el('input', { type: 'password', autocomplete: 'new-password', minlength: '12' });
+  const b = el('input', { type: 'password', autocomplete: 'new-password', minlength: '12' });
+  const msg = el('p.error', { role: 'alert' });
+  const save = el('button.btn', {}, 'Change password');
+
+  save.addEventListener('click', async () => {
+    msg.textContent = '';
+    if (a.value !== b.value) { msg.textContent = 'Those two do not match.'; b.focus(); return; }
+    save.disabled = true;
+    try {
+      const r = await api('/api/password', {
+        method: 'POST', body: { currentPassword: cur.value, newPassword: a.value },
+      });
+      d.close();
+      toast(r.otherSessionsEnded
+        ? 'Password changed — signed out of ' + r.otherSessionsEnded + ' other session(s).'
+        : 'Password changed.');
+    } catch (e) {
+      msg.textContent = e.message;
+      save.disabled = false;
+      cur.focus();
+    }
+  });
+
+  d.body.append(
+    el('p.small.muted', {}, state.user.name + ' · ' + state.user.email + ' · ' + state.user.role),
+    el('label', {}, 'Current password'), cur,
+    el('label', {}, 'New password'), a,
+    el('label', {}, 'Repeat the new password'), b,
+    el('p.small.muted', {}, 'At least 12 characters. A short phrase you will remember beats a mangled '
+      + 'word. Changing it signs you out everywhere else.'),
+    msg,
+  );
+  d.actions.append(el('button.btn.ghost', { onclick: d.close }, 'Cancel'), save);
+  cur.focus();
 }
 
 // ----------------------------------------------------------------- start ---
