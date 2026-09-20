@@ -1,0 +1,12 @@
+-- 002-trailman-level.sql — remember which level the portal has each trailman at.
+--
+-- The trailman picker on /advancement/index groups people by their LEVEL
+-- ASSIGNMENT ("Navigators", "Adventurers", or "Adult" for someone with none),
+-- and that grouping — not age — is what decides whether a person can still
+-- earn a star. A Trailman who turns 18 becomes a registered adult but keeps
+-- his Adventurers level, and goes on earning until the level is removed.
+--
+-- Storing it means the app can show what the portal thinks someone is, rather
+-- than inferring a level from whatever the service ledger happens to say about
+-- rows from years ago.
+ALTER TABLE trailman ADD COLUMN level TEXT;

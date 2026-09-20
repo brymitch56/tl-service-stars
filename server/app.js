@@ -164,6 +164,7 @@ function createApp() {
       return {
         id: p.id,
         name: p.name,
+        level: p.level || null,
         levels,
         woodlands: g.sums.display.woodlands,
         newStars: g.chain.newStars,

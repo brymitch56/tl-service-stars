@@ -165,3 +165,65 @@ test('the sync reports a failed portal sign-in instead of throwing', async () =>
   assert.match(r.error, /Could not sign in/);
   assert.equal(db.prepare("SELECT ok FROM run WHERE kind='sync' ORDER BY id DESC LIMIT 1").get().ok, 0);
 });
+
+// ------------------------------------------- leaving a star-earning level ---
+test('someone who loses their level is retired, and their open stars withdrawn', async () => {
+  const id = 'u00000000900';
+  const rows = [
+    row({ key: 'x1', date: '09/10/2024', act: 'Food bank', hours: '20', level: 'Navigator' }),
+    row({ key: 'x2', date: '03/04/2025', act: 'Park clean-up', hours: '14', level: 'Navigator' }),
+  ];
+  const profile = F.profilePage(id, { ledger: F.ledgerGrid(rows, { totalHours: '34' }), awards: [] });
+  // First sync: he is an Adventurer, 34 hours, so stars are owed.
+  const asAdventurer = {
+    'GET /login': F.DASHBOARD,
+    'GET /advancement/index': F.advancementIndex([{ id, name: 'Rivers, Sam', group: 'Adventurers' }]),
+    [`GET /profile/${id}`]: profile,
+  };
+  await sync.runSync({ trigger: 'test', client: fakeClient(asAdventurer) });
+  const tm = db.prepare('SELECT * FROM trailman WHERE tlc_user_id = ?').get(id);
+  assert.equal(tm.active, 1);
+  assert.equal(tm.level, 'Adventurer', 'the portal level is recorded');
+  const open = db.prepare("SELECT COUNT(*) n FROM proposal WHERE trailman_id=? AND status='proposed'").get(tm.id).n;
+  assert.ok(open > 0, 'he had stars owed while he was an Adventurer');
+
+  // He turns 18 and the level is removed: the portal moves him to "Adult".
+  const asAdult = {
+    ...asAdventurer,
+    'GET /advancement/index': F.advancementIndex([
+      { id, name: 'Rivers, Sam', group: 'Adult' },
+      { id: 'u00000000901', name: 'Holt, Miles', group: 'Navigators' },
+    ]),
+    'GET /profile/u00000000901': F.profilePage('u00000000901', { ledger: F.EMPTY_LEDGER, awards: [] }),
+  };
+  const r = await sync.runSync({ trigger: 'test', client: fakeClient(asAdult) });
+  const after = db.prepare('SELECT * FROM trailman WHERE tlc_user_id = ?').get(id);
+  assert.equal(after.active, 0, 'he is retired once he has no star level');
+  assert.equal(
+    db.prepare("SELECT COUNT(*) n FROM proposal WHERE trailman_id=? AND status='proposed'").get(tm.id).n, 0,
+    'a star that can no longer be awarded is withdrawn, not left in Review',
+  );
+  assert.ok(r.warnings.some((w) => /no longer at a star level/.test(w)));
+  // His history is kept, not deleted.
+  assert.ok(db.prepare('SELECT COUNT(*) n FROM service_row WHERE trailman_id=?').get(tm.id).n > 0);
+});
+
+test('a mass disappearance is refused rather than acted on', async () => {
+  // Seed a squad, then return a picker that has lost most of them — what a
+  // renamed optgroup would look like. Nobody should be retired.
+  const people = [];
+  for (let i = 0; i < 8; i++) people.push({ id: `u0000000091${i}`, name: `Case, Trailman${i}`, group: 'Navigators' });
+  const routes = { 'GET /login': F.DASHBOARD, 'GET /advancement/index': F.advancementIndex(people) };
+  for (const p of people) routes[`GET /profile/${p.id}`] = F.profilePage(p.id, { ledger: F.EMPTY_LEDGER, awards: [] });
+  await sync.runSync({ trigger: 'test', client: fakeClient(routes) });
+  const before = db.prepare('SELECT COUNT(*) n FROM trailman WHERE active = 1').get().n;
+
+  const survivor = people.slice(0, 1);
+  const shrunk = { 'GET /login': F.DASHBOARD, 'GET /advancement/index': F.advancementIndex(survivor) };
+  for (const p of survivor) shrunk[`GET /profile/${p.id}`] = routes[`GET /profile/${p.id}`];
+  const r = await sync.runSync({ trigger: 'test', client: fakeClient(shrunk) });
+
+  assert.equal(db.prepare('SELECT COUNT(*) n FROM trailman WHERE active = 1').get().n, before,
+    'nobody is retired when the drop is implausibly large');
+  assert.ok(r.warnings.some((w) => /REFUSING to retire/.test(w)), r.warnings.join(' | '));
+});

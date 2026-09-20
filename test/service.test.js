@@ -113,9 +113,77 @@ test('ledger pages merge and de-duplicate', () => {
 test('the trailman picker yields hashids, not the level groups', () => {
   const { trailmen } = parseTrailmenIndex(F.advancementIndex([
     { id: F.TRAILMAN_A, name: 'Rivers, Sam' },
-    { id: F.TRAILMAN_B, name: 'Vance, Theo' },
+    { id: F.TRAILMAN_B, name: 'Vance, Theo', group: 'Adventurers' },
   ]));
-  assert.equal(trailmen.length, 2);
-  assert.deepEqual(trailmen.map((t) => t.trailmanId), [F.TRAILMAN_A, F.TRAILMAN_B]);
-  assert.equal(trailmen[0].name, 'Rivers, Sam');
+  assert.equal(trailmen.length, 2, 'the two umbrella entries are not people');
+  assert.deepEqual(trailmen.map((t) => t.trailmanId).sort(), [F.TRAILMAN_A, F.TRAILMAN_B].sort());
+  assert.equal(trailmen.find((t) => t.trailmanId === F.TRAILMAN_A).level, 'Navigator');
+  assert.equal(trailmen.find((t) => t.trailmanId === F.TRAILMAN_B).level, 'Adventurer');
+});
+
+// --------------------------------------------------- the trailman picker ---
+/**
+ * The picker groups people by LEVEL ASSIGNMENT, and that is what decides who
+ * can earn a star — not whether they are an adult. A Trailman who turns 18
+ * becomes a registered adult but keeps his Adventurers level and keeps
+ * earning until the level is removed, so he stays in the Adventurers group
+ * and must stay in the app. The portal's own "Adult" group is the one that
+ * earns nothing. Read live 2026-09-19.
+ */
+const picker = (groups, ungrouped = []) => '<select id="trailmen-select" name="trailmen-select[]" multiple>'
+  + ungrouped.map((o) => `<option value="${o.v}">${o.n}</option>`).join('')
+  + Object.entries(groups).map(([label, people]) => `<optgroup label="${label}">`
+    + people.map((p) => `<option value="${p.v}">${p.n}</option>`).join('') + '</optgroup>').join('')
+  + '</select>';
+
+test('only people at a star level are taken from the picker', () => {
+  const r = parseTrailmenIndex(picker({
+    Adult: [{ v: 'u00000000001', n: 'Ashford, Nathaniel' }],
+    Navigators: [{ v: 'u00000000002', n: 'Holt, Miles' }],
+    Adventurers: [{ v: 'u00000000003', n: 'Vance, Theo' }],
+  }, [
+    // the umbrella entries carry level ids, not trailman hashids
+    { v: 'j8e296a067a3', n: 'All Navigators' },
+    { v: 'x1ff1de77400', n: 'All Adventurers' },
+  ]));
+  assert.deepEqual(r.trailmen.map((t) => [t.name, t.level]), [
+    ['Holt, Miles', 'Navigator'],
+    ['Vance, Theo', 'Adventurer'],
+  ]);
+  assert.deepEqual(r.excluded, [{ name: 'Ashford, Nathaniel', group: 'Adult' }]);
+  assert.deepEqual(r.groups, { Adult: 1, Navigators: 1, Adventurers: 1 });
+});
+
+test('an adult still assigned to a star level is kept', () => {
+  // The 18-year-old case: registered adult, still an Adventurer, still earning.
+  const r = parseTrailmenIndex(picker({
+    Adventurers: [{ v: 'u00000000004', n: 'Rivers, Sam' }],
+    Adult: [{ v: 'u00000000005', n: 'Wilder, Aaron' }],
+  }));
+  assert.deepEqual(r.trailmen.map((t) => t.name), ['Rivers, Sam']);
+  assert.equal(r.trailmen[0].level, 'Adventurer');
+});
+
+test('an exclusion is never silent', () => {
+  const r = parseTrailmenIndex(picker({
+    Adult: [{ v: 'u00000000006', n: 'One, Someone' }, { v: 'u00000000007', n: 'Two, Someone' }],
+    Navigators: [{ v: 'u00000000008', n: 'Holt, Miles' }],
+  }));
+  assert.ok(r.warnings.some((w) => /"Adult" group earn no stars/.test(w)));
+  assert.equal(r.excluded.length, 2);
+});
+
+test('an unfamiliar group is left out and reported, not let in', () => {
+  const r = parseTrailmenIndex(picker({
+    Alumni: [{ v: 'u00000000009', n: 'Past, Person' }],
+    Navigators: [{ v: 'u00000000010', n: 'Holt, Miles' }],
+  }));
+  assert.deepEqual(r.trailmen.map((t) => t.name), ['Holt, Miles']);
+  assert.ok(r.warnings.some((w) => /"Alumni"/.test(w)));
+});
+
+test('a renamed level group empties the list loudly rather than quietly', () => {
+  const r = parseTrailmenIndex(picker({ Navigator: [{ v: 'u00000000011', n: 'Holt, Miles' }] }));
+  assert.equal(r.trailmen.length, 0);
+  assert.ok(r.warnings.some((w) => /no one at a star level/.test(w)), r.warnings.join('; '));
 });

@@ -218,7 +218,10 @@ async function viewTrailmen() {
       l.conflict ? el('span.pill.conflict', {}, 'check') : null);
     body.append(el('tr.rowlink', { onclick: () => { state.detailId = t.id; render(); } },
       el('td', {}, el('strong', {}, t.name),
-        t.newStars ? el('span.pill.new', { style: 'margin-left:8px' }, `${t.newStars} owed`) : null),
+        t.newStars ? el('span.pill.new', { style: 'margin-left:8px' }, `${t.newStars} owed`) : null,
+        // The level the portal has him at — the thing that decides whether he
+        // can still earn. Shown so it is obvious who the app is tracking.
+        t.level ? el('div', {}, el('span.pill.level', {}, t.level)) : null),
       cell(nav),
       cell(adv),
       el('td', {},

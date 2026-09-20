@@ -81,12 +81,29 @@ function profilePage(trailmanId, { ledger, awards }) {
     + '</body></html>';
 }
 
-/** /advancement/index — the page shell with the trailman picker. */
+/**
+ * /advancement/index — the page shell with the trailman picker.
+ *
+ * The picker groups people by LEVEL ASSIGNMENT with <optgroup>, and that
+ * grouping is what says who can earn a star: "Navigators", "Adventurers", or
+ * "Adult" for someone with no level (a Trailman who turned 18 keeps his level
+ * and stays in the Adventurers group until it is removed). The two umbrella
+ * entries sit outside any group and carry level ids, not trailman hashids.
+ * Each entry may name its `group`; the default is Navigators.
+ */
 function advancementIndex(trailmen) {
+  const byGroup = new Map();
+  for (const t of trailmen) {
+    const g = t.group || 'Navigators';
+    if (!byGroup.has(g)) byGroup.set(g, []);
+    byGroup.get(g).push(t);
+  }
   const opts = [
     '<option value="j8e296a067a3">All Navigators</option>',
     '<option value="x1ff1de77400">All Adventurers</option>',
-    ...trailmen.map((t) => `<option value="${t.id}">${t.name}</option>`),
+    ...[...byGroup.entries()].map(([g, people]) => `<optgroup label="${g}">`
+      + people.map((t) => `<option value="${t.id}">${t.name}</option>`).join('')
+      + '</optgroup>'),
   ].join('');
   return '<!doctype html><html><head><meta name="csrf-token" content="test-csrf"></head><body>'
     + `<select id="trailmen-select" name="trailmen-select[]" multiple>${opts}</select>`

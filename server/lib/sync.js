@@ -46,20 +46,48 @@ function makeTlc(overrides = {}) {
 }
 
 // --------------------------------------------------------------- mirror ----
-function upsertTrailmen(list) {
+/**
+ * A run may not retire more of the roster than this in one go. A portal that
+ * renamed an optgroup would otherwise empty a whole level silently: everyone
+ * at that level would go inactive and their open stars would be withdrawn,
+ * and the only sign would be a smaller list. Past the limit the run keeps
+ * everyone and says so instead, because a stale roster is recoverable and a
+ * silently emptied one is not.
+ */
+const MAX_DEACTIVATIONS = { share: 0.25, floor: 3 };
+
+function upsertTrailmen(list, warnings = []) {
   const at = nowIso();
   const ins = db.prepare(
-    `INSERT INTO trailman (tlc_user_id, name, active, first_seen_at, last_seen_at)
-     VALUES (?, ?, 1, ?, ?)
-     ON CONFLICT(tlc_user_id) DO UPDATE SET name = excluded.name, active = 1, last_seen_at = excluded.last_seen_at`,
+    `INSERT INTO trailman (tlc_user_id, name, level, active, first_seen_at, last_seen_at)
+     VALUES (?, ?, ?, 1, ?, ?)
+     ON CONFLICT(tlc_user_id) DO UPDATE SET name = excluded.name, level = excluded.level,
+       active = 1, last_seen_at = excluded.last_seen_at`,
   );
-  const seen = [];
+  const seen = list.map((t) => t.trailmanId);
   db.transaction(() => {
-    for (const t of list) { ins.run(t.trailmanId, t.name, at, at); seen.push(t.trailmanId); }
-    // Anyone the portal no longer lists goes inactive; his history stays.
-    if (seen.length) {
-      db.prepare(`UPDATE trailman SET active = 0
-                   WHERE active = 1 AND tlc_user_id NOT IN (${seen.map(() => '?').join(',')})`).run(...seen);
+    for (const t of list) ins.run(t.trailmanId, t.name, t.level || null, at, at);
+    if (!seen.length) return;
+    const placeholders = seen.map(() => '?').join(',');
+    const going = db.prepare(
+      `SELECT id, name FROM trailman WHERE active = 1 AND tlc_user_id NOT IN (${placeholders})`,
+    ).all(...seen);
+    if (!going.length) return;
+    const activeNow = db.prepare('SELECT COUNT(*) n FROM trailman WHERE active = 1').get().n;
+    const limit = Math.max(MAX_DEACTIVATIONS.floor, Math.ceil(activeNow * MAX_DEACTIVATIONS.share));
+    if (going.length > limit) {
+      warnings.push(`REFUSING to retire ${going.length} of ${activeNow} trailmen in one run (limit ${limit}) — `
+        + 'the portal may have renamed a level group. Nobody was changed; check the picker.');
+      return;
+    }
+    db.prepare(`UPDATE trailman SET active = 0 WHERE active = 1 AND tlc_user_id NOT IN (${placeholders})`)
+      .run(...seen);
+    // Someone who has left a star level cannot be awarded anything more, so
+    // an open proposal for them is no longer actionable. Withdraw it with the
+    // reason rather than leaving a star in Review that can never be approved.
+    for (const g of going) {
+      const n = holdProposals(g.id, 'no longer at a level that earns Service Stars');
+      warnings.push(`${g.name}: no longer at a star level — retired${n ? `, ${n} open star(s) withdrawn` : ''}`);
     }
   })();
   return db.prepare('SELECT * FROM trailman WHERE active = 1 ORDER BY name COLLATE NOCASE').all();
@@ -246,7 +274,13 @@ async function runSync({ trigger = 'manual', actor = null, onlyTrailmanId = null
   warnings.push(...roster.warnings);
   if (!roster.trailmen.length) return finish(false, 'Trail Life Connect returned no trailmen.');
 
-  let people = upsertTrailmen(roster.trailmen);
+  // Record the shape of the picker every run. If the portal renames a level
+  // group, or starts putting people somewhere new, the counts say so here
+  // rather than the roster just quietly changing size.
+  summary.groups = roster.groups || {};
+  summary.excluded = (roster.excluded || []).length;
+
+  let people = upsertTrailmen(roster.trailmen, warnings);
   summary.trailmen = people.length;
   if (onlyTrailmanId) people = people.filter((p) => p.tlc_user_id === onlyTrailmanId);
 
@@ -361,7 +395,13 @@ function progressFor(trailmanRow) {
   ).all(trailmanRow.id);
   return {
     trailman: {
-      id: trailmanRow.id, name: trailmanRow.name, tlcUserId: trailmanRow.tlc_user_id, active: !!trailmanRow.active,
+      id: trailmanRow.id,
+      name: trailmanRow.name,
+      // The level the PORTAL has him at — what decides whether he can still
+      // earn, and not the same thing as the level on his old ledger rows.
+      level: trailmanRow.level || null,
+      tlcUserId: trailmanRow.tlc_user_id,
+      active: !!trailmanRow.active,
     },
     rates: RATE_HUNDREDTHS,
     sums: {

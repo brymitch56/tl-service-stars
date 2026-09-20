@@ -25,7 +25,7 @@
  * after a sign-out, and stale star counts are exactly what this app exists
  * to get right.
  */
-const VERSION = 'tls-v2'; // v2: hold the reload when a password dialog or a typed form is open
+const VERSION = 'tls-v3'; // v3: only people at a star level; show the portal level
 
 /** The minimum needed to render the app offline. Versioned assets are added at runtime. */
 const SHELL = ['/', '/index.html', '/icon.svg', '/manifest.webmanifest'];
