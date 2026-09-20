@@ -110,6 +110,13 @@ Eight wrong passwords locks an account for fifteen minutes.
 whatever the database says, and the UI cannot demote or disable them. A
 mistake in the app can never lock the troop out.
 
+Anyone can change their own password from the account dialog (their name in
+the header); every other session of theirs ends when they do. An admin can
+edit a leader’s name, sign-in address and role from Settings. Changing the
+address changes the credential, so that person is signed out everywhere and
+signs back in at the new address with the same password — unless the address
+is one of the `ADMIN_EMAILS`, which the UI leaves alone for the reason above.
+
 ## Deploying
 
 See [`docs/pi-setup.md`](docs/pi-setup.md). In short: clone, `npm ci --omit=dev`,

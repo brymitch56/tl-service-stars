@@ -96,24 +96,71 @@ async function createUser({ email, name, role = 'leader' }, actor) {
   return { user: getUser(info.lastInsertRowid), tempPassword };
 }
 
-/** Change a leader's name or role. */
-function updateUser(id, { name, role }, actor) {
+/**
+ * Change a leader's name, e-mail or role.
+ *
+ * The e-mail is the sign-in identity, not a contact detail, so changing it
+ * changes who this account *is*. Two consequences are deliberate:
+ *   - every session of theirs ends, because the credential pair they are
+ *     holding one half of no longer exists (the caller is told, so it can
+ *     hand the browser doing the editing a fresh one if it is their own
+ *     account);
+ *   - an address listed in ADMIN_EMAILS cannot be edited here at all. Doing
+ *     so would quietly revoke the recovery hatch — the account would keep
+ *     whatever role the database says and lose the guarantee that .env can
+ *     always let someone back in.
+ *
+ * Returns the updated user with { emailChanged } so the route can react.
+ */
+function updateUser(id, { name, email, role }, actor) {
   const row = db.prepare('SELECT * FROM app_user WHERE id = ?').get(id);
   if (!row) throw new UserError(404, 'No such user.');
   const before = present(row);
+
+  let nextEmail = row.email;
+  if (email !== undefined) {
+    const e = lc(email);
+    if (!EMAIL_RE.test(e)) throw new UserError(400, `"${email}" is not an e-mail address.`);
+    if (e !== lc(row.email)) {
+      if (isEnvAdmin(row.email)) {
+        throw new UserError(409, 'This address is an admin in .env on the server; change it there first.');
+      }
+      if (db.prepare('SELECT 1 FROM app_user WHERE email = ? COLLATE NOCASE AND id <> ?').get(e, id)) {
+        throw new UserError(409, 'Someone with that e-mail already has an account.');
+      }
+    }
+    nextEmail = e;
+  }
+  const emailChanged = lc(nextEmail) !== lc(row.email);
+
+  let nextName = row.name;
+  if (name !== undefined) {
+    nextName = String(name).trim();
+    if (!nextName) throw new UserError(400, 'A name is required.');
+  }
+
   const nextRole = role === undefined ? row.role : role;
   if (!['leader', 'admin'].includes(nextRole)) throw new UserError(400, 'Role must be leader or admin.');
-  if (effectiveRole(row) === 'admin' && nextRole !== 'admin' && countActiveAdmins(row.id) === 0) {
+  // Count admins as the row will be AFTER this change: an edit that moves the
+  // account onto an ADMIN_EMAILS address keeps it an admin whatever the role
+  // field says, and one that moves it off does not.
+  const willBeAdmin = isEnvAdmin(nextEmail) || nextRole === 'admin';
+  if (effectiveRole(row) === 'admin' && !willBeAdmin && countActiveAdmins(row.id) === 0) {
     throw new UserError(409, 'This is the only admin — make someone else an admin first.');
   }
-  if (isEnvAdmin(row.email) && nextRole !== 'admin') {
+  // Only an explicit demotion is refused. An .env admin whose stored role is
+  // still "leader" is a normal state — .env outranks the column — and it must
+  // not stop an admin from so much as fixing their name.
+  if (isEnvAdmin(row.email) && role !== undefined && role !== 'admin') {
     throw new UserError(409, 'This address is an admin in .env on the server; remove it there first.');
   }
-  db.prepare('UPDATE app_user SET name = COALESCE(?, name), role = ? WHERE id = ?')
-    .run(name === undefined ? null : String(name).trim(), nextRole, id);
+
+  db.prepare('UPDATE app_user SET name = ?, email = ?, role = ? WHERE id = ?')
+    .run(nextName, nextEmail, nextRole, id);
+  if (emailChanged) auth.destroyUserSessions(id);
   const after = getUser(id);
   audit(actor, 'user.update', 'app_user', id, before, after);
-  return after;
+  return { ...after, emailChanged };
 }
 
 /** Issue a new one-time password. Every existing session of theirs is ended. */

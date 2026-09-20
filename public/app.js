@@ -622,6 +622,13 @@ async function viewSettings() {
         u.locked ? el('span.pill.conflict', {}, 'locked') : null,
         u.disabled ? el('span.pill', {}, 'disabled') : null),
       el('td.r', {},
+        el('button.btn.small.ghost', {
+          onclick: () => showEditUserDialog(u, async (r) => {
+            await render();
+            if (u.id === state.user.id) await refreshMe();
+            toast(r.emailChanged ? 'Saved — the new address signs in from now on.' : 'Saved.');
+          }),
+        }, 'Edit'), ' ',
         el('button.btn.small.ghost', { onclick: () => act('reset') }, 'Reset password'), ' ',
         u.locked ? el('button.btn.small.ghost', { onclick: () => act('unlock', 'Unlocked.') }, 'Unlock') : null, ' ',
         u.envAdmin ? null : el('button.btn.small.ghost', {
@@ -767,6 +774,67 @@ function showTempPassword(email, password) {
   );
   d.actions.append(copyBtn, el('button.btn.ghost', { onclick: d.close }, 'Done — I have saved it'));
   copyBtn.focus();
+}
+
+/**
+ * Edit a leader: their name, the address they sign in with, and their role.
+ *
+ * The e-mail is not a contact field — it is half of the credential pair, so
+ * the copy says what changing it costs (they are signed out; the password is
+ * unchanged). An ADMIN_EMAILS address is shown read-only rather than hidden,
+ * because "why can I not edit this one?" is a question worth answering on
+ * the screen where it is asked.
+ */
+function showEditUserDialog(u, onSaved) {
+  const d = openDialog({ title: 'Edit leader' });
+  const name = el('input', { type: 'text', value: u.name });
+  const email = el('input', { type: 'email', value: u.email, autocomplete: 'off' });
+  const role = el('select', {},
+    el('option', { value: 'leader' }, 'Leader'),
+    el('option', { value: 'admin' }, 'Admin'));
+  role.value = u.role;
+  if (u.envAdmin) { email.disabled = true; role.disabled = true; }
+  const msg = el('p.error', { role: 'alert' });
+  const save = el('button.btn', {}, 'Save');
+
+  save.addEventListener('click', async () => {
+    msg.textContent = '';
+    save.disabled = true;
+    try {
+      // An .env admin may still be renamed; the two fields the server would
+      // refuse are simply not sent.
+      const body = u.envAdmin ? { name: name.value } : { name: name.value, email: email.value, role: role.value };
+      const r = await api('/api/users/' + u.id, { method: 'POST', body });
+      d.close();
+      await onSaved(r);
+    } catch (e) {
+      msg.textContent = e.message;
+      save.disabled = false;
+    }
+  });
+
+  d.body.append(
+    el('label', {}, 'Name'), name,
+    el('label', {}, 'E-mail'), email,
+    el('label', {}, 'Role'), role,
+    u.envAdmin
+      ? el('p.small.muted', {}, 'This address is listed in ADMIN_EMAILS on the server, so it stays an admin and '
+        + 'keeps this address whatever is set here — change .env on the Pi instead.')
+      : el('p.small.muted', {}, 'The e-mail address is how they sign in. Changing it signs them out everywhere; '
+        + 'their password is not affected.'),
+    msg,
+  );
+  d.actions.append(el('button.btn.ghost', { onclick: d.close }, 'Cancel'), save);
+  name.focus();
+}
+
+/** Re-read your own account after editing it — the header shows it. */
+async function refreshMe() {
+  const me = await api('/api/me');
+  state.user = me.user;
+  state.settings = me.settings || state.settings;
+  $('#who').textContent = me.user.name + ' · ' + me.user.role;
+  for (const b of document.querySelectorAll('#tabs button[data-admin]')) b.hidden = me.user.role !== 'admin';
 }
 
 /**

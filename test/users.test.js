@@ -75,6 +75,66 @@ test('an .env admin outranks the database and cannot be locked out from the UI',
   process.env.ADMIN_EMAILS = '';
 });
 
+test('a leader can be renamed, and re-addressed', async () => {
+  const { user, tempPassword } = await users.createUser({ name: 'Dana Wolfe', email: 'dana@example.com' }, 'a');
+  const { session } = await auth.signIn('dana@example.com', tempPassword);
+
+  // A rename touches nothing else: same address, same password, still signed in.
+  const renamed = users.updateUser(user.id, { name: '  Dana Wolfe-Hart  ' }, 'admin@example.com');
+  assert.equal(renamed.name, 'Dana Wolfe-Hart', 'the name is trimmed');
+  assert.equal(renamed.email, 'dana@example.com');
+  assert.equal(renamed.emailChanged, false);
+  assert.ok(auth.userForSession(session.id), 'a rename does not sign anyone out');
+
+  // The address is half the credential pair, so changing it ends their
+  // sessions — but the password they know still works at the new address.
+  const moved = users.updateUser(user.id, { email: 'Dana.Wolfe-Hart@Example.com' }, 'admin@example.com');
+  assert.equal(moved.email, 'dana.wolfe-hart@example.com', 'stored lower-case');
+  assert.equal(moved.emailChanged, true);
+  assert.equal(auth.userForSession(session.id), null, 'the old session is gone');
+  await assert.rejects(() => auth.signIn('dana@example.com', tempPassword), /do not match/);
+  const back = await auth.signIn('dana.wolfe-hart@example.com', tempPassword);
+  assert.equal(back.user.id, user.id);
+  assert.equal(
+    db.prepare("SELECT COUNT(*) n FROM audit_log WHERE action = 'user.update'").get().n > 0, true,
+    'edits are audited',
+  );
+});
+
+test('an edit cannot collide with another account, or blank a name', async () => {
+  const u = db.prepare("SELECT id FROM app_user WHERE email = 'dana.wolfe-hart@example.com'").get();
+  assert.throws(() => users.updateUser(u.id, { email: 'second@example.com' }, 'a'), /already has an account/);
+  assert.throws(() => users.updateUser(u.id, { email: 'nope' }, 'a'), /not an e-mail/);
+  assert.throws(() => users.updateUser(u.id, { name: '   ' }, 'a'), /name is required/);
+  // Re-stating the same address in different case is not a collision with itself.
+  const same = users.updateUser(u.id, { email: 'DANA.WOLFE-HART@example.com' }, 'a');
+  assert.equal(same.emailChanged, false, 'case alone is not a change');
+});
+
+test('an .env admin keeps the address .env names them by', async () => {
+  process.env.ADMIN_EMAILS = 'recovery@example.com';
+  const u = db.prepare("SELECT id FROM app_user WHERE email = 'recovery@example.com'").get();
+  assert.throws(() => users.updateUser(u.id, { email: 'elsewhere@example.com' }, 'a'), /.env/);
+  // Renaming them is fine — only the address is load-bearing.
+  assert.equal(users.updateUser(u.id, { name: 'Recovery Account' }, 'a').name, 'Recovery Account');
+  process.env.ADMIN_EMAILS = '';
+});
+
+test('moving the only admin onto an .env address leaves someone in charge', async () => {
+  // The role field says leader, but ADMIN_EMAILS outranks it, so the troop is
+  // not locked out and the edit is allowed.
+  process.env.ADMIN_EMAILS = 'hatch@example.com';
+  const { user } = await users.createUser({ name: 'Sole', email: 'sole@example.com', role: 'admin' }, 'a');
+  for (const other of users.listUsers()) {
+    if (other.id !== user.id && !other.disabled && other.role === 'admin') users.setDisabled(other.id, true, 'a');
+  }
+  assert.equal(users.countActiveAdmins(), 1, 'exactly one admin for this test');
+  const moved = users.updateUser(user.id, { email: 'hatch@example.com', role: 'leader' }, 'a');
+  assert.equal(moved.role, 'admin', '.env still promotes them');
+  assert.equal(users.countActiveAdmins(), 1);
+  process.env.ADMIN_EMAILS = '';
+});
+
 test('unlock clears a lockout without changing the password', async () => {
   const { tempPassword } = await users.createUser({ name: 'Locked', email: 'lockme@example.com' }, 'a');
   const u = db.prepare("SELECT id FROM app_user WHERE email = 'lockme@example.com'").get();

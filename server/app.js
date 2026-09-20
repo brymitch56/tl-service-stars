@@ -399,7 +399,19 @@ function createApp() {
   }));
 
   app.post('/api/users/:id', requireXhr, auth.requireUser('admin'), (req, res) => {
-    try { res.json({ user: users.updateUser(Number(req.params.id), req.body || {}, actorOf(req)) }); } catch (e) {
+    try {
+      const id = Number(req.params.id);
+      const { emailChanged, ...user } = users.updateUser(id, req.body || {}, actorOf(req));
+      // Changing the sign-in address ends that person's sessions. When an
+      // admin has just edited their own account, give this browser a fresh
+      // one — otherwise saving your own name signs you out of the screen you
+      // are standing in front of.
+      if (emailChanged && req.user.id === id) {
+        const session = auth.createSession(id, req.get('User-Agent'));
+        res.cookie(auth.COOKIE, session.id, auth.cookieOpts());
+      }
+      res.json({ user, emailChanged });
+    } catch (e) {
       res.status(e.status || 400).json({ error: e.message });
     }
   });

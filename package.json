@@ -1,6 +1,6 @@
 {
   "name": "tl-service-stars",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "Leaders-only Service Star tracker for a Trail Life USA troop — reads Trail Life Connect service hours, proposes earned Navigator/Adventurer Service Stars, and (behind a flag) records them back on TLC.",
   "license": "MIT",

@@ -298,3 +298,50 @@ test('the change-password route is reachable, and audited', async () => {
   assert.equal(db.prepare("SELECT COUNT(*) n FROM audit_log WHERE action = 'user.password_changed'").get().n,
     before + 1, 'a password change leaves a trail');
 });
+
+test('editing a leader: a new address ends their sessions; editing your own keeps you signed in', async () => {
+  const { user, tempPassword } = await users.createUser(
+    { name: 'Moe Mover', email: 'moe@example.com' }, 'ada@example.com',
+  );
+  await signIn('mover', 'moe@example.com', tempPassword);
+  await call('/api/password', {
+    method: 'POST', who: 'mover', body: { currentPassword: tempPassword, newPassword: 'fake-never-real-phrase-4k' },
+  });
+  assert.equal((await call('/api/me', { who: 'mover' })).status, 200);
+
+  const nosy = await users.createUser({ name: 'Nosy Leader', email: 'nosy@example.com' }, 'ada@example.com');
+  await signIn('nosy', 'nosy@example.com', nosy.tempPassword);
+  await call('/api/password', {
+    method: 'POST', who: 'nosy', body: { currentPassword: nosy.tempPassword, newPassword: 'fake-never-real-phrase-7m' },
+  });
+  assert.equal((await call(`/api/users/${user.id}`, {
+    method: 'POST', who: 'nosy', body: { name: 'Nope' },
+  })).status, 403, 'editing people is admin-only');
+
+  const renamed = await call(`/api/users/${user.id}`, { method: 'POST', who: 'admin', body: { name: 'Moe Grant' } });
+  assert.equal(renamed.status, 200);
+  assert.equal(renamed.data.user.name, 'Moe Grant');
+  assert.equal(renamed.data.emailChanged, false);
+  assert.equal((await call('/api/me', { who: 'mover' })).status, 200, 'a rename signs nobody out');
+
+  const moved = await call(`/api/users/${user.id}`, {
+    method: 'POST', who: 'admin', body: { email: 'moe.grant@example.com' },
+  });
+  assert.equal(moved.data.emailChanged, true);
+  assert.equal((await call('/api/me', { who: 'mover' })).status, 401, 'the old session is gone');
+  assert.equal((await signIn('mover', 'moe.grant@example.com', 'fake-never-real-phrase-4k')).status, 200,
+    'the password they know still works at the new address');
+
+  // Editing your own address would otherwise sign you out of the very screen
+  // you are using, so the route hands this browser a fresh session.
+  const me = (await call('/api/me', { who: 'admin' })).data.user;
+  const self = await call(`/api/users/${me.id}`, { method: 'POST', who: 'admin', body: { email: 'ada.admin@example.com' } });
+  assert.equal(self.data.emailChanged, true);
+  const after = await call('/api/me', { who: 'admin' });
+  assert.equal(after.status, 200);
+  assert.equal(after.data.user.email, 'ada.admin@example.com');
+
+  // Put it back, so a later test still knows who the admin is.
+  await call(`/api/users/${me.id}`, { method: 'POST', who: 'admin', body: { email: 'ada@example.com' } });
+  assert.equal((await call('/api/me', { who: 'admin' })).data.user.email, 'ada@example.com');
+});
