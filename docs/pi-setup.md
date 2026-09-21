@@ -1,8 +1,12 @@
 # Deploying on the Pi
 
 The app binds `127.0.0.1` and expects TLS to be terminated in front of it by a
-Cloudflare Tunnel, exactly like the troop's other tools. It is a Node 20+
-service with one SQLite file; nothing else is needed on the box.
+Cloudflare Tunnel, exactly like the troop's other tools. It is a Node service
+with one SQLite file; nothing else is needed on the box. Node 20 is the
+declared minimum and **Node 22 is what it is run and tested on** — and the one
+to choose on a Raspberry Pi: the locked `better-sqlite3` ships a prebuilt
+binary for Node 22 on arm64 but not for Node 20, where `npm ci` falls back to
+compiling it (Python + a C++ toolchain, and several minutes).
 
 ## First install
 
@@ -69,14 +73,29 @@ Run each step as its own command over `ssh pi` rather than chaining them.
 
 ## Backups
 
-`install-pi.sh` takes a `data/pre-deploy-<timestamp>.db` before every
-migration. For a backup by hand (there is no `sqlite3` CLI on this Pi, so use
-the app's own driver):
+**This app has no backup job of its own.** `install-pi.sh` takes a
+`data/pre-deploy-<timestamp>.db` before every migration, and that is all — a
+snapshot on the same SD card as the database it protects. Nothing here runs
+nightly and nothing leaves the box. That is easy to miss when the apps beside
+it do back themselves up: this database once sat for weeks with no off-box
+copy for exactly that reason. **Add it to whatever backs up the host.**
+
+Whatever does the copying must not simply `cp` the file: the database runs in
+WAL mode, so a plain copy taken mid-write can be torn. `VACUUM INTO` writes a
+clean, self-contained copy while the app stays up. The app's own driver can do
+it, so no `sqlite3` command-line tool is needed:
 
 ```bash
 cd /home/pi/tl-service-stars
 node -e "require('better-sqlite3')('data/stars.db').exec(\"VACUUM INTO 'data/backup-$(date +%F).db'\")"
 ```
+
+For a host backup script running as root, do the read as the app's user
+(`sudo -u pi node -e …`): a root process that opens a WAL database can leave
+root-owned `-shm`/`-wal` files behind, which locks the app out of its own
+data. Then ship the copy off the box, encrypted — it holds names and service
+records. Keep a couple of weeks of dated copies, and check now and then that
+the newest one is recent: a backup nobody looks at is a guess.
 
 Everything under `data/` is trailman data: keep it off shared storage and out
 of git (the `.gitignore` already fences it).
