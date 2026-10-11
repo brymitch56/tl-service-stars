@@ -233,6 +233,16 @@ function holdProposals(trailmanId, why) {
  * One full read sync.
  * @param {{trigger?: string, actor?: string, onlyTrailmanId?: string, client?: object}} opts
  */
+// A portal account can hold several roles, and the ACTIVE role is
+// account-wide: switching it in a browser switches it for this app's session
+// too. 2026-10-11: with an area role active, sign-in (and the texted code)
+// worked but /advancement/index had no trailman picker, so every sync failed
+// with "no trailmen" and reconnecting changed nothing. Role names differ
+// between portals and are not read; an empty roster after a good sign-in is
+// the evidence, so the message names this cause.
+const ROLE_HINT = ' The signed-in portal account may be set to the wrong role: sign in to the portal in a browser, ' +
+  'switch to a role with permission to see the troop\'s members and advancement, then sync again.';
+
 async function runSync({ trigger = 'manual', actor = null, onlyTrailmanId = null, client = null } = {}) {
   const started = nowIso();
   const runId = db.prepare('INSERT INTO run (kind, started_at, trigger, actor) VALUES (?, ?, ?, ?)')
@@ -272,7 +282,7 @@ async function runSync({ trigger = 'manual', actor = null, onlyTrailmanId = null
     return finish(false, `Could not read the trailman list: ${e.message}`);
   }
   warnings.push(...roster.warnings);
-  if (!roster.trailmen.length) return finish(false, 'Trail Life Connect returned no trailmen.');
+  if (!roster.trailmen.length) return finish(false, 'Trail Life Connect returned no trailmen.' + ROLE_HINT);
 
   // Record the shape of the picker every run. If the portal renames a level
   // group, or starts putting people somewhere new, the counts say so here
@@ -421,6 +431,6 @@ function progressFor(trailmanRow) {
 }
 
 module.exports = {
-  makeTlc, runSync, progressFor,
+  makeTlc, runSync, progressFor, ROLE_HINT,
   upsertTrailmen, mirrorTrailman, loadBaseline, captureBaseline, reconcileProposals, holdProposals,
 };

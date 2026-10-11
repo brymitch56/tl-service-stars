@@ -227,3 +227,19 @@ test('a mass disappearance is refused rather than acted on', async () => {
     'nobody is retired when the drop is implausibly large');
   assert.ok(r.warnings.some((w) => /REFUSING to retire/.test(w)), r.warnings.join(' | '));
 });
+
+// 2026-10-11: the account's active role was switched (in a browser) to one
+// without troop access. Sign-in still worked, but the advancement page had no
+// trailman picker, so the sync failed with a bare "no trailmen". The failure
+// must now name the likely cause — in portal-neutral words (role names differ
+// between portals and are never read).
+test('signed in but no trailman picker: the failure names the wrong-role cause', async () => {
+  const notice = '<!doctype html><html><head><meta name="csrf-token" content="signed-in-csrf"><title>Notice</title></head>' +
+    '<body><h1>Notice</h1><p>Nothing to track for this role.</p></body></html>';
+  const r = await sync.runSync({ trigger: 'test', client: fakeClient({ 'GET /login': F.DASHBOARD, 'GET /advancement/index': notice }) });
+  assert.strictEqual(r.ok, false);
+  assert.match(r.error, /no trailmen/);
+  assert.match(r.error, /set to the wrong role.*switch to a role with permission/);
+  assert.doesNotMatch(sync.ROLE_HINT, /Troopmaster|Trail Life|TLC|AHG/i, 'no portal or role names');
+  assert.ok(r.warnings.some((w) => /trailmen-select not found/.test(w)), 'the technical detail stays in the warnings');
+});
